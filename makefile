@@ -4,7 +4,11 @@ CPPFLAGS += -std=c++11 -W -Wall  -g
 CPPFLAGS += -O3
 CPPFLAGS += -I include
 
+ifeq ($(OS),Windows_NT)
+LDLIBS += -lws2_32
+else
 LDLIBS += -lrt
+endif
 
 all : bin/execute_puzzle bin/create_puzzle_input bin/run_puzzle bin/compare_puzzle_output
 

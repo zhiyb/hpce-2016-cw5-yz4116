@@ -2,7 +2,9 @@
 #define puzzler_core_util_hpp
 
 #if defined(_WIN32) || defined(_WIN64)
+#if !defined(NOMINMAX)
 #define NOMINMAX
+#endif
 #endif
 
 #include <time.h>
@@ -104,7 +106,7 @@ namespace puzzler
     return tt;;
   }
 #elif __MACH__
-    
+
     inline timestamp_t now()
     {
         struct timespec ts;
@@ -116,10 +118,10 @@ namespace puzzler
         mach_port_deallocate(mach_task_self(), cclock);
         ts.tv_sec = mts.tv_sec;
         ts.tv_nsec = mts.tv_nsec;
-        
+
         return uint64_t(1e9*ts.tv_sec+ts.tv_nsec);
     }
-    
+
 #else
   inline timestamp_t now()
   {
