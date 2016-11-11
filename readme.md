@@ -24,6 +24,34 @@ free from the Amazon Educate programme - you shouldn't
 be paying anything to use them. You may want to look
 back over the [AWS notes from CW2](https://github.com/HPCE/hpce-2016-cw2/blob/master/aws.md).
 
+Pair-work
+---------
+
+This coursework is intended to be performed in pairs - based on
+past student discussions these pairs are organised by the
+students themselves. Usually everyone has already paired themselves
+up, but if anyone is having difficulty, then let me know and
+I may be able to help. Singletons are sometimes required (e.g.
+an odd sized class), in which case I make some allowances for
+the reduced amount of time available during marking. Trios are
+also possible, but things go in the other direction (and trios
+are generally much less efficient).
+
+To indicate who you are working with, each member of the
+pair should give write access to their hpce-2016-cw5-login
+repository to the other person. You should have admin
+control over your own account, so in the github page for
+the repo got to Settings->Collaborators and Teams, or
+go to:
+
+    https://github.com/HPCE/hpce-2016-cw5-[LOGIN]/settings/collaboration
+    
+You can then add you partner as a collaborator.
+
+During development try to keep the two accounts in sync if possible.
+For the submission I will take the last commit in either repository
+that is earlier than 22:00.
+
 Meta-specification
 ------------------
 
