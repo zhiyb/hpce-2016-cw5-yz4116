@@ -111,6 +111,17 @@ Deliverable format
   - Any changes will happen in an additive way (none are expected for this CW)
 
   - Bug-fixes to `include` stuff are still welcome.
+  
+- You own the files in the `provider` directory
+
+  - You'll be replacing the implementation of `XXXXProvider::Execute` in `provider/xxxx.hpp`
+    with something (hopefully) faster.
+  
+  - A good starting point is to replace the implementation of `XXXXProvider::Execute` with a copy
+    of the body of `XXXXPuzzle::ReferenceExecute`, and check that it still does the same thing.
+    
+  - The reason for the indirection is to force people to have an unmodified reference version
+    available at all times, as it tends to encourage testing.
 
 - The public entry point to your code is via `puzzler::PuzzleRegistrar::UserRegisterPuzzles`,
     which must be compiled into the static library `lib/libpuzzler.a`.
