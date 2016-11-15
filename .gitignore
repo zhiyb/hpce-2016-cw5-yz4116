@@ -6,5 +6,9 @@
 *.ref
 *.got
 *.stackdump
+.*.swp
+*~
+*.out
+*.pass
 
 w/

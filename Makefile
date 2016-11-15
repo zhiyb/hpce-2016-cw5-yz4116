@@ -1,6 +1,6 @@
 SHELL=/bin/bash
 
-CPPFLAGS += -std=c++11 -W -Wall  -g
+CPPFLAGS += -std=c++11 -W -Wall  -g -pg
 CPPFLAGS += -O3
 CPPFLAGS += -I include
 
@@ -29,3 +29,31 @@ serenity_now_% : all
 	diff w/$*.ref.out w/$*.got.out
 
 serenity_now : $(foreach x,julia ising_spin logic_sim random_walk,serenity_now_$(x))
+
+.DELETE_ON_ERROR:
+.SECONDARY:
+
+PUZZLES = julia ising_spin logic_sim random_walk
+
+.PHONY: test
+test:	results/julia-5000.pass \
+	results/ising_spin-300.pass \
+	results/logic_sim-5000.pass \
+	results/random_walk-5000.pass
+
+bin w results:
+	mkdir -p $@
+
+results/%.pass: w/%.ref w/%.out | results
+	-diff -q $^ && touch $@
+
+VERBOSE ?= 1
+
+w/%.in: bin/create_puzzle_input | w
+	$< $(shell echo $* | sed 's/-/ /g') $(VERBOSE) > $@
+
+w/%.ref: w/%.in bin/execute_puzzle
+	cat $< | (time bin/execute_puzzle 0 $(VERBOSE)) | sha1sum -b > $@
+
+w/%.out: w/%.in bin/execute_puzzle
+	cat $< | (time bin/execute_puzzle 1 $(VERBOSE)) | sha1sum -b > $@
