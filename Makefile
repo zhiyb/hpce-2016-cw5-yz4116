@@ -1,6 +1,6 @@
 SHELL=/bin/bash
 
-CPPFLAGS += -std=c++11 -W -Wall  -g -pg
+CPPFLAGS += -std=c++11 -W -Wall  -g
 CPPFLAGS += -O3
 CPPFLAGS += -I include
 
@@ -13,7 +13,7 @@ endif
 all : bin/execute_puzzle bin/create_puzzle_input bin/run_puzzle bin/compare_puzzle_output
 
 lib/libpuzzler.a : $(wildcard provider/*.cpp provider/*.hpp include/puzzler/*.hpp include/puzzler/*/*.hpp)
-	cd provider && $(MAKE) all
+	$(MAKE) -C provider all
 
 bin/% : src/%.cpp lib/libpuzzler.a
 	-mkdir -p bin
@@ -39,21 +39,71 @@ PUZZLES = julia ising_spin logic_sim random_walk
 test:	results/julia-5000.pass \
 	results/ising_spin-300.pass \
 	results/logic_sim-5000.pass \
-	results/random_walk-5000.pass
+	results/random_walk-10000.pass
 
-bin w results:
+bin w results records:
 	mkdir -p $@
 
 results/%.pass: w/%.ref w/%.out | results
 	-diff -q $^ && touch $@
 
-VERBOSE ?= 1
+VERBOSE ?= 2
 
-w/%.in: bin/create_puzzle_input | w
-	$< $(shell echo $* | sed 's/-/ /g') $(VERBOSE) > $@
+w/%.in: | bin/create_puzzle_input w
+	bin/create_puzzle_input $(shell echo $* | sed 's/-/ /g') $(VERBOSE) > $@
 
-w/%.ref: w/%.in bin/execute_puzzle
-	cat $< | (time bin/execute_puzzle 0 $(VERBOSE)) | sha1sum -b > $@
+w/%.ref: w/%.in | bin/execute_puzzle
+	cat $< | (time $| 0 $(VERBOSE)) | sha1sum -b > $@
 
 w/%.out: w/%.in bin/execute_puzzle
-	cat $< | (time bin/execute_puzzle 1 $(VERBOSE)) | sha1sum -b > $@
+	cat $< | (time $| 1 $(VERBOSE)) | sha1sum -b > $@
+
+w/%.time: | bin/execute_puzzle
+	for f in $^; do echo $$f >&2; cat $$f | (time bin/execute_puzzle 1 $(VERBOSE)); done 2>&1 > /dev/null | tee $@
+
+w/%.real: w/%.time
+	(echo "scale = 5;"; cat $< | grep -E '^real' | awk '{print $$2}' | sed 's/real//;s/m/*60+/;s/s//') | bc > $@
+
+# PDF generation
+
+PLATFORM ?= i5_3337U-HD4000
+
+.PHONY: pdf
+pdf:	results/$(PLATFORM)-julia.pdf \
+	results/$(PLATFORM)-ising_spin.pdf \
+	results/$(PLATFORM)-logic_sim.pdf \
+	results/$(PLATFORM)-random_walk.pdf
+
+# Puzzle and platform specific evaluation ranges
+
+SEQ-julia	:= $(shell for i in `seq 5 15`; do echo $$((2 ** i)); done)
+SEQ-ising_spin	:= $(shell for i in `seq 3 9`; do echo $$((2 ** i)); done)
+SEQ-logic_sim	:= $(shell for i in `seq 3 13`; do echo $$((2 ** i)); done)
+SEQ-random_walk	:= $(shell for i in `seq 3 13`; do echo $$((2 ** i)); done)
+
+# Records and data generation
+
+TIME := $(shell date +%y%m%d-%H%M%S)
+
+.PHONY: record
+record: $(foreach i,$(PUZZLES),records/$(TIME)-$(PLATFORM)-$i.dat)
+
+results/$(PLATFORM)-%.pdf: w/$(PLATFORM)-%.dat plot.gnu provider/user_%.hpp | results
+	gnuplot -e "set xlabel 'scale'; set ylabel 'time'" \
+		-e "set logscale x; set logscale y" \
+		-e "filename='$<'" -e "cols=$(shell head -n 1 $< | sed 's/"[^"]*"/w/g' | wc -w)" ./plot.gnu > $@
+
+w/$(PLATFORM)-%.dat: w/$(PLATFORM)-%-x.dat records/$(TIME)-$(PLATFORM)-%.dat provider/user_%.hpp | results
+	echo "scale `ls records/*-$(PLATFORM)-$*.dat | sed 's/.*\/\([0-9]*-[0-9]*\).*/\1/' | xargs`" > $@
+	paste w/$(PLATFORM)-$*-x.dat `ls records/*-$(PLATFORM)-$*.dat` | sed 's/^\t/NaN\t/;s/\s\s/\tNaN\t/g;s/\s\s/\tNan\t/g' >> $@
+
+w/$(PLATFORM)-%-x.dat: | w
+	echo $(SEQ-$*) | tr ' ' '\n' > $@
+
+w/julia.time: $(foreach i,$(SEQ-julia),w/julia-$i.in)
+w/ising_spin.time: $(foreach i,$(SEQ-ising_spin),w/ising_spin-$i.in)
+w/logic_sim.time: $(foreach i,$(SEQ-logic_sim),w/logic_sim-$i.in)
+w/random_walk.time: $(foreach i,$(SEQ-random_walk),w/random_walk-$i.in)
+
+records/$(TIME)-$(PLATFORM)-%.dat: w/%.real | records
+	cat $^ > $@

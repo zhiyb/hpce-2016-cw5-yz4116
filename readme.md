@@ -4,6 +4,7 @@ HPCE 2016 CW5
 - Issued: Fri 11th Nov
 - Due: Fri 25th Nov, 22:00
 
+***Detailed approach description at the end of this document.***
 
 Specification
 -------------
@@ -165,3 +166,26 @@ branches only merged into master once they are stable.
 
 Finally, to re-iterate: the tests I am doing do _no_ testing at all for correctness, they
 don't even look at the output of the tests.
+
+
+yz4116
+======
+
+RandomWalk
+----------
+
+From reference execution time: (with `scale = 10000`)
+
+```
+[execute_puzzle], 1479257402.55, 2, Created log.
+[execute_puzzle], 1479257410.82, 2, Loaded input, puzzle=random_walk
+[execute_puzzle], 1479257410.82, 2, Begin reference
+[execute_puzzle], 1479257410.82, 3, Starting random walks
+[execute_puzzle], 1479257418.62, 3, Done random walks, converting histogram
+[execute_puzzle], 1479257418.62, 3, Finished
+[execute_puzzle], 1479257418.63, 2, Finished reference
+```
+
+Loading puzzle from input takes ~8 seconds, but nothing I can do about it.
+
+The only part that can be optimised from the `provider` directory, is random walks algorithm, which takes another ~8 seconds in this case.

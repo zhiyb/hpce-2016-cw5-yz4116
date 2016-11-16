@@ -10,5 +10,10 @@
 *~
 *.out
 *.pass
+*.gprof
+*.flag
+*.time
+*.real
+*.dat
 
 w/
