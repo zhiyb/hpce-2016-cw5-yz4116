@@ -171,6 +171,14 @@ don't even look at the output of the tests.
 yz4116
 ======
 
+Julia
+-----
+
+Julia algorithm renders each pixels independently, without any dependencies, therefore it can be simply parallelised.
+
+The 2 loops in reference implementation (one from frame renderer, another one from `Execute()` calculates actual pixel output) were merged together, gives a greater speed up.
+
+
 RandomWalk
 ----------
 
@@ -189,3 +197,5 @@ From reference execution time: (with `scale = 10000`)
 Loading puzzle from input takes ~8 seconds, but nothing I can do about it.
 
 The only part that can be optimised from the `provider` directory, is random walks algorithm, which takes another ~8 seconds in this case.
+
+The loop from `Execute()` steps a constant length of cells starting at a random location with randomised direction, and increment a `count` field in the corresponding output cell each time. Therefore, to parallelise the steps, the random seeds for each iteration were calculated and stored before actual iterations, and multiple independent `count` arrays were allocated for each parallel task. The `count` arrays then summarised together in the final output loop for histogram conversion, which was also parallelised.
