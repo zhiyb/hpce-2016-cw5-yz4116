@@ -4,6 +4,8 @@ CPPFLAGS += -std=c++11 -W -Wall  -g
 CPPFLAGS += -O3
 CPPFLAGS += -I include
 
+LDLIBS += -ltbb
+
 ifeq ($(OS),Windows_NT)
 LDLIBS += -lws2_32
 else
@@ -53,16 +55,10 @@ w/%.in: | bin/create_puzzle_input w
 	bin/create_puzzle_input $(shell echo $* | sed 's/-/ /g') $(VERBOSE) > $@
 
 w/%.ref: w/%.in | bin/execute_puzzle
-	cat $< | (time $| 0 $(VERBOSE)) | sha1sum -b > $@
+	cat $< | (time bin/execute_puzzle 1 $(VERBOSE)) | sha1sum -b > $@
 
 w/%.out: w/%.in bin/execute_puzzle
-	cat $< | (time $| 1 $(VERBOSE)) | sha1sum -b > $@
-
-w/%.time: | bin/execute_puzzle
-	for f in $^; do echo $$f >&2; cat $$f | (time bin/execute_puzzle 1 $(VERBOSE)); done 2>&1 > /dev/null | tee $@
-
-w/%.real: w/%.time
-	(echo "scale = 5;"; cat $< | grep -E '^real' | awk '{print $$2}' | sed 's/real//;s/m/*60+/;s/s//') | bc > $@
+	cat $< | (time bin/execute_puzzle 0 $(VERBOSE)) | sha1sum -b > $@
 
 # PDF generation
 
@@ -76,7 +72,12 @@ pdf:	results/$(PLATFORM)-julia.pdf \
 
 # Puzzle and platform specific evaluation ranges
 
-SEQ-julia	:= $(shell for i in `seq 5 15`; do echo $$((2 ** i)); done)
+VERBOSE-julia		:= 2
+VERBOSE-ising_spin	:= 2
+VERBOSE-logic_sim	:= 2
+VERBOSE-random_walk	:= 3
+
+SEQ-julia	:= $(shell for i in `seq 5 13`; do echo $$((2 ** i)); done)
 SEQ-ising_spin	:= $(shell for i in `seq 3 9`; do echo $$((2 ** i)); done)
 SEQ-logic_sim	:= $(shell for i in `seq 3 13`; do echo $$((2 ** i)); done)
 SEQ-random_walk	:= $(shell for i in `seq 3 13`; do echo $$((2 ** i)); done)
@@ -107,3 +108,9 @@ w/random_walk.time: $(foreach i,$(SEQ-random_walk),w/random_walk-$i.in)
 
 records/$(TIME)-$(PLATFORM)-%.dat: w/%.real | records
 	cat $^ > $@
+
+w/%.time: provider/user_%.hpp | bin/execute_puzzle
+	for f in $(filter-out $<,$^); do echo $$f >&2; cat $$f | (time bin/execute_puzzle 0 $(VERBOSE-$*)); done 2>&1 > /dev/null | tee $@
+
+w/%.real: w/%.time
+	(echo "scale = 5;"; cat $< | grep -E '^real' | awk '{print $$2}' | sed 's/real//;s/m/*60+/;s/s//') | bc > $@
