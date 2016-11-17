@@ -3,7 +3,7 @@ SHELL=/bin/bash
 CPPFLAGS += -std=c++11 -W -Wall  -g
 CPPFLAGS += -O3
 CPPFLAGS += -I include
-
+LDLIBS += -ltbb
 ifeq ($(OS),Windows_NT)
 LDLIBS += -lws2_32
 else
