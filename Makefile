@@ -77,10 +77,10 @@ VERBOSE-ising_spin	:= 2
 VERBOSE-logic_sim	:= 2
 VERBOSE-random_walk	:= 3
 
-SEQ-julia	:= $(shell for i in `seq 5 13`; do echo $$((2 ** i)); done)
+SEQ-julia	:= $(shell for i in `seq 5 11`; do echo $$((2 ** i)); done)
 SEQ-ising_spin	:= $(shell for i in `seq 3 9`; do echo $$((2 ** i)); done)
-SEQ-logic_sim	:= $(shell for i in `seq 3 13`; do echo $$((2 ** i)); done)
-SEQ-random_walk	:= $(shell for i in `seq 3 13`; do echo $$((2 ** i)); done)
+SEQ-logic_sim	:= $(shell for i in `seq 5 14`; do echo $$((2 ** i)); done)
+SEQ-random_walk	:= $(shell for i in `seq 5 14`; do echo $$((2 ** i)); done)
 
 # Records and data generation
 
@@ -113,4 +113,6 @@ w/%.time: provider/user_%.hpp | bin/execute_puzzle
 	for f in $(filter-out $<,$^); do echo $$f >&2; cat $$f | (time bin/execute_puzzle 0 $(VERBOSE-$*)); done 2>&1 > /dev/null | tee $@
 
 w/%.real: w/%.time
-	(echo "scale = 5;"; cat $< | grep -E '^real' | awk '{print $$2}' | sed 's/real//;s/m/*60+/;s/s//') | bc > $@
+	cat $< | grep -E 'Begin execution|Finished execution' | awk '{print $$2}' | sed 's/,//' | paste - - | sed 's/^/-/;s/\s/+/' | bc > $@
+
+#	(echo "scale = 5;"; cat $< | grep -E '^real' | awk '{print $$2}' | sed 's/real//;s/m/*60+/;s/s//') | bc > $@
