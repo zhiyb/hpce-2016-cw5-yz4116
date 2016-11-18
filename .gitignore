@@ -6,5 +6,6 @@
 *.ref
 *.got
 *.stackdump
-
-w/
+*.out
+*.un~
+*.swp
