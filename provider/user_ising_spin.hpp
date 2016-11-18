@@ -16,7 +16,6 @@ public:
 		const puzzler::IsingSpinInput *pInput,
 		puzzler::IsingSpinOutput *pOutput
 	) const override {
-		//return ReferenceExecute(log, pInput, pOutput);
 		int n=pInput->n;
 
 		//std::vector<int> current(n*n), next(n*n);
@@ -31,38 +30,29 @@ public:
 		for (uint32_t &seed: seeds)
 			seed = rng();
 		tbb::parallel_for(0u, pInput->repeats, [=, &seeds, &log, &sums, &sumSquares](unsigned i){
-		//parallel_for(blocked_range<unsigned>(0u, pInput->repeats, 256), [&](const blocked_range<unsigned>& range) {
-			//for (unsigned i = range.begin(); i != range.end(); i++) {
-				std::vector<int> current(n*n), next(n*n);
-			//uint32_t seed;
-			//for(unsigned i=0; i<pInput->repeats; i++){
-				uint32_t seed = seeds[i];
-				//seed=rng();
+			std::vector<int> current(n*n), next(n*n);
+			uint32_t seed = seeds[i];
 
-				log->LogVerbose("  Repeat %u", i);
+			//log->LogVerbose("  Repeat %u", i);
 
-				init(pInput, seed, &current[0]);
+			//size_t idx = i * n * n;
+			init(pInput, seed, &current[0]);
 
-				for(unsigned t=0; t<pInput->maxTime; t++){
-					//log->LogDebug("    Step %u", t);
+			for(unsigned t=0; t<pInput->maxTime; t++){
+				//log->LogDebug("    Step %u", t);
 
-					// Dump the state of spins on high log levels
-					//dump(Log_Debug, pInput, &current[0], log);
+				// Dump the state of spins on high log levels
+				//dump(Log_Debug, pInput, &current[0], log);
 
-					step(pInput, seed, &current[0], &next[0]);
-					std::swap(current, next);
+				step(pInput, seed, &current[0], &next[0]);
+				std::swap(current, next);
 
-					// Track the statistics
-					double countPositive=count(pInput, &current[0]);
-					//sums[t] += countPositive;
-					sums[i + t * pInput->repeats] = countPositive;
-					//sumSquares[t] += countPositive*countPositive;
-					sumSquares[i + t * pInput->repeats] = countPositive*countPositive;
-				}
-
-				//seed=lcg(seed);
+				// Track the statistics
+				double countPositive=count(pInput, &current[0]);
+				sums[i + t * pInput->repeats] = countPositive;
+				sumSquares[i + t * pInput->repeats] = countPositive*countPositive;
+			}
 		});
-		//}, simple_partitioner());
 
 		log->LogInfo("Calculating final statistics");
 
@@ -109,28 +99,6 @@ private:
 		}
 	}
 
-	void dump(
-		int logLevel,
-		const IsingSpinInput *pInput,
-		int *in,
-		ILog *log
-	 ) const {
-		if(logLevel > log->Level())
-			return;
-
-		unsigned n=pInput->n;
-
-		log->Log(logLevel, [&](std::ostream &dst){
-				dst<<"\n";
-				for(unsigned y=0; y<n; y++){
-				for(unsigned x=0; x<n; x++){
-				dst<<(in[y*n+x]<0?"-":"+");
-				} 
-				dst<<"\n";
-				}
-				});
-	}
-
 	int count(
 		const IsingSpinInput *pInput,
 		const int *in
@@ -147,12 +115,7 @@ private:
 		int *out
 	 ) const {
 		unsigned n=pInput->n;
-
-		std::vector<uint32_t> seeds(n * n);
-		for (unsigned i = 0; i != n * n; i++) {
-			seeds[i] = seed;
-			seed = lcg(seed);
-		}
+		uint32_t s = seed;
 
 		for(unsigned x=0; x<n; x++){
 			for(unsigned y=0; y<n; y++){
@@ -167,13 +130,11 @@ private:
 				unsigned index=(nhood+4)/2 + 5*(C+1)/2;
 				float prob=pInput->probs[index];
 
-				if( seeds[x*n+y] < prob){
-					C *= -1; // Flip
-				}
-
-				out[y*n+x]=C;
+				out[y*n+x] = s < prob ? -C : C;
+				s = lcg(s);
 			}
 		}
+		seed = s;
 	}
 };
 
