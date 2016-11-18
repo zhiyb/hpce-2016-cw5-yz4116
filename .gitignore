@@ -6,6 +6,15 @@
 *.ref
 *.got
 *.stackdump
+.*.swp
+*~
 *.out
-*.un~
-*.swp
+*.pass
+*.gprof
+*.flag
+*.time
+*.real
+*.dat
+out
+
+w/
