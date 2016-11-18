@@ -149,16 +149,16 @@ private:
 		//int W, E, N, S, nhood, C;
 		//unsigned index;
 		//float prob;
-		uint32_t seed_in[n*n];
-		seed_in[0] = seed;
-		for(unsigned i = 0; i < n*n; i++)
-		{
-			seed_in[i + 1] = lcg(seed_in[i]);
-		}
-		tbb::parallel_for(0u, n, [&](unsigned x){
-		// for(unsigned x=0; x<n; x++){
-			tbb::parallel_for(0u, n, [&](unsigned y){
-			// for(unsigned y=0; y<n; y++){
+		//uint32_t seed[n*n];
+		// seed_in[0] = seed;
+		// for(unsigned i = 0; i < n*n; i++)
+		// {
+		//	seed_in[i + 1] = lcg(seed_in[i]);
+		// }
+		// tbb::parallel_for(0u, n, [&](unsigned x){
+		 for(unsigned x=0; x<n; x++){
+			// tbb::parallel_for(0u, n, [&](unsigned y){
+			for(unsigned y=0; y<n; y++){
 				int W = x==0 ?    in[y*n+n-1]   : in[y*n+x-1];
 				int E = x==n-1 ?  in[y*n+0]     : in[y*n+x+1];
 				int N = y==0 ?    in[(n-1)*n+x] : in[(y-1)*n+x];
@@ -170,16 +170,16 @@ private:
 				unsigned index=(nhood+4)/2 + 5*(C+1)/2;
 				float prob=pInput->probs[index];
 
-				if( seed_in[x*n+y] < prob){
+				if( seed < prob){
 					C *= -1; // Flip
 				}
 
 				out[y*n+x]=C;
 
-			//	seed = lcg(seed);
-			});
-		});
-		seed = seed_in[n*n];
+				seed = lcg(seed);
+			}
+		}
+		//seed = seed_in[n*n];
 	}
 };
 
