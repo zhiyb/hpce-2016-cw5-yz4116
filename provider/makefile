@@ -1,4 +1,5 @@
-SHELL=/bin/bash
+SHELL = /bin/bash
+CXX = /init g++
 
 CPPFLAGS += -std=c++11 -W -Wall  -g
 CPPFLAGS += -O3

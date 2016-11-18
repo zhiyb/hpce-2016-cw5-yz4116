@@ -1,4 +1,6 @@
-SHELL=/bin/bash
+SHELL = /bin/bash
+CXX = /init g++
+OS = Windows_NT
 
 CPPFLAGS += -std=c++11 -W -Wall  -g
 CPPFLAGS += -O3
@@ -12,22 +14,21 @@ else
 LDLIBS += -lrt
 endif
 
-all : bin/execute_puzzle bin/create_puzzle_input bin/run_puzzle bin/compare_puzzle_output
+all : bin/execute_puzzle.exe bin/create_puzzle_input.exe bin/run_puzzle.exe bin/compare_puzzle_output.exe
 
 lib/libpuzzler.a : $(wildcard provider/*.cpp provider/*.hpp include/puzzler/*.hpp include/puzzler/*/*.hpp)
 	$(MAKE) -C provider all
 
-bin/% : src/%.cpp lib/libpuzzler.a
-	-mkdir -p bin
+bin/%.exe : src/%.cpp lib/libpuzzler.a | bin
 	$(CXX) $(CPPFLAGS) -o $@ $^ $(LDFLAGS) $(LDLIBS) -Llib -lpuzzler
 
 
 serenity_now_% : all
 	mkdir -p w
-	bin/run_puzzle $* 100 1
-	bin/create_puzzle_input $* 100 1 > w/$*.in
-	cat w/$*.in | bin/execute_puzzle 1 1 > w/$*.ref.out
-	cat w/$*.in | bin/execute_puzzle 0 1 > w/$*.got.out
+	bin/run_puzzle.exe $* 100 1
+	bin/create_puzzle_input.exe $* 100 1 > w/$*.in
+	cat w/$*.in | bin/execute_puzzle.exe 1 1 > w/$*.ref.out
+	cat w/$*.in | bin/execute_puzzle.exe 0 1 > w/$*.got.out
 	diff w/$*.ref.out w/$*.got.out
 
 serenity_now : $(foreach x,julia ising_spin logic_sim random_walk,serenity_now_$(x))
@@ -51,14 +52,14 @@ results/%.pass: w/%.ref w/%.out | results
 
 VERBOSE ?= 2
 
-w/%.in: | bin/create_puzzle_input w
-	bin/create_puzzle_input $(shell echo $* | sed 's/-/ /g') $(VERBOSE) > $@
+w/%.in: | bin/create_puzzle_input.exe w
+	bin/create_puzzle_input.exe $(shell echo $* | sed 's/-/ /g') $(VERBOSE) > $@
 
-w/%.ref: w/%.in | bin/execute_puzzle
-	cat $< | (time bin/execute_puzzle 1 $(VERBOSE)) | sha1sum -b > $@
+w/%.ref: w/%.in | bin/execute_puzzle.exe
+	cat $< | (time bin/execute_puzzle.exe 1 $(VERBOSE)) | sha1sum -b > $@
 
-w/%.out: w/%.in bin/execute_puzzle
-	cat $< | (time bin/execute_puzzle 0 $(VERBOSE)) | sha1sum -b > $@
+w/%.out: w/%.in bin/execute_puzzle.exe
+	cat $< | (time bin/execute_puzzle.exe 0 $(VERBOSE)) | sha1sum -b > $@
 
 # PDF generation
 
@@ -109,8 +110,8 @@ w/random_walk.time: $(foreach i,$(SEQ-random_walk),w/random_walk-$i.in)
 records/$(TIME)-$(PLATFORM)-%.dat: w/%.real | records
 	cat $^ > $@
 
-w/%.time: provider/user_%.hpp | bin/execute_puzzle
-	for f in $(filter-out $<,$^); do echo $$f >&2; cat $$f | (time bin/execute_puzzle 0 $(VERBOSE-$*)); done 2>&1 > /dev/null | tee $@
+w/%.time: provider/user_%.hpp | bin/execute_puzzle.exe
+	for f in $(filter-out $<,$^); do echo $$f >&2; cat $$f | (time bin/execute_puzzle.exe 0 $(VERBOSE-$*)); done 2>&1 > /dev/null | tee $@
 
 w/%.real: w/%.time
 	cat $< | grep -E 'Begin execution|Finished execution' | awk '{print $$2}' | sed 's/,//' | paste - - | sed 's/^/-/;s/\s/+/' | bc > $@
