@@ -20,7 +20,7 @@ endif
 all : bin/execute_puzzle.exe bin/create_puzzle_input.exe bin/run_puzzle.exe bin/compare_puzzle_output.exe
 
 lib/libpuzzler.a : $(wildcard provider/*.cpp provider/*.hpp include/puzzler/*.hpp include/puzzler/*/*.hpp)
-	$(MAKE) -f provider/Makefile.i5 -C provider all
+	$(MAKE) -C provider -f Makefile.i5 all
 
 bin/%.exe : src/%.cpp lib/libpuzzler.a | bin
 	$(CXX) $(CPPFLAGS) -o $@ $^ $(LDFLAGS) $(LDLIBS) -Llib -lpuzzler

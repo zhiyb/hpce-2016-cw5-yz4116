@@ -1,6 +1,9 @@
 #ifndef user_julia_hpp
 #define user_julia_hpp
 
+#define __CL_ENABLE_EXCEPTIONS
+#include "CL/cl.hpp"
+
 #include <tbb/parallel_for.h>
 #include "puzzler/puzzles/julia.hpp"
 
@@ -10,11 +13,45 @@ public:
 	JuliaProvider() {}
 
 	virtual void Execute(
-			puzzler::ILog *log,
-			const puzzler::JuliaInput *pInput,
-			puzzler::JuliaOutput *pOutput
-			) const override {
+		puzzler::ILog *log,
+		const puzzler::JuliaInput *pInput,
+		puzzler::JuliaOutput *pOutput
+	) const override {
 		//std::vector<unsigned> dest(pInput->width*pInput->height);
+
+#if 0
+		// Enumerate available OpenCL platforms
+		std::vector<cl::Platform> platforms;
+
+		cl::Platform::get(&platforms);
+		if (platforms.size() == 0)
+			throw std::runtime_error("No OpenCL platforms found.");
+
+		std::clog << "Found " << platforms.size() << " platforms\n";
+		for (unsigned i = 0; i < platforms.size(); i++) {
+			std::string vendor = platforms[i].getInfo<CL_PLATFORM_NAME>();
+			std::clog << "  Platform " << i << " : " << vendor << "\n";
+		}
+
+		// Select an OpenCL platform
+		int selectedPlatform = 0;
+		if (getenv("HPCE_SELECT_PLATFORM"))
+			selectedPlatform = atoi(getenv("HPCE_SELECT_PLATFORM"));
+		std::clog << "Choosing platform " << selectedPlatform << "\n";
+		cl::Platform platform(platforms.at(selectedPlatform));
+
+		// Enumerate available OpenCL devices
+		std::vector<cl::Device> devices;
+		platform.getDevices(CL_DEVICE_TYPE_ALL, &devices);	
+		if (devices.size() == 0)
+			throw std::runtime_error("No opencl devices found.");
+
+		std::clog << "Found " << devices.size() << " devices\n";
+		for (unsigned i = 0; i < devices.size(); i++) {
+			std::string name = devices[i].getInfo<CL_DEVICE_NAME>();
+			std::clog << "  Device " << i << " : " << name << "\n";
+		}
+#endif
 
 		log->LogInfo("Starting");
 

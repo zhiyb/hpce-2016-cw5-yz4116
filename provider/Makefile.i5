@@ -5,6 +5,7 @@ CPPFLAGS += -std=c++11 -W -Wall  -g
 CPPFLAGS += -O3
 CPPFLAGS += -I ../include
 CPPFLAGS += -I 'C:\Program Files (x86)\Intel\OpenCL SDK\6.3\include'
+CPPFLAGS += -Wno-unused-parameter -Wno-deprecated-declarations
 
 puzzles.o : $(wildcard *.hpp) $(wildcard ../include/puzzler/*.hpp ../include/puzzler/*/*.hpp)
 
