@@ -14,14 +14,16 @@ public:
 	{}
 
 	virtual void Execute(
-			puzzler::ILog *log,
-			const puzzler::RandomWalkInput *pInput,
-			puzzler::RandomWalkOutput *pOutput
-			) const override {
+		puzzler::ILog *log,
+		const puzzler::RandomWalkInput *pInput,
+		puzzler::RandomWalkOutput *pOutput
+	) const override {
 
 		// Take a copy, as we'll need to modify the "count" flags
 		const std::vector<dd_node_t> &nodes(pInput->nodes);
-		std::vector<std::vector<uint32_t> > count(pInput->numSamples, std::vector<uint32_t>(nodes.size()));
+		std::vector<uint32_t> count(pInput->numSamples * nodes.size());
+
+		unsigned edges = nodes[0].edges.size();
 
 		log->Log(Log_Debug, [&](std::ostream &dst){
 			dst<<"  Scale = "<<nodes.size()<<"\n";
@@ -44,14 +46,15 @@ public:
 		std::vector<unsigned> seed(pInput->numSamples);
 		std::vector<unsigned> start(pInput->numSamples);
 
+		unsigned size = nodes.size();
 		for(unsigned i=0; i<pInput->numSamples; i++){
 			seed[i] = rng();
-			start[i] = rng() % nodes.size();    // Choose a random node
+			start[i] = rng() % size;    // Choose a random node
 		}
 
-		tbb::parallel_for(0u, pInput->numSamples, [&](unsigned i){
-			unsigned length=pInput->lengthWalks;           // All paths the same length
-			random_walk(nodes, count[i], seed[i], start[i], length);
+		unsigned length=pInput->lengthWalks;	// All paths the same length
+		tbb::parallel_for(0u, pInput->numSamples, [&, size, length, edges](unsigned i){
+			random_walk(nodes, &count[i * size], seed[i], start[i], length, edges);
 		});
 
 		log->LogVerbose("Done random walks, converting histogram");
@@ -61,9 +64,8 @@ public:
 		tbb::parallel_for((size_t)0, nodes.size(), [&](size_t i){
 			uint32_t cnt = nodes[i].count;
 			for (unsigned j = 0; j != pInput->numSamples; j++)
-				cnt += count[j][i];
+				cnt += count[j * nodes.size() + i];
 			pOutput->histogram[i]=std::make_pair(uint32_t(cnt),uint32_t(i));
-			//nodes[i].count=0;
 		});
 		// Order them by how often they were visited
 		std::sort(pOutput->histogram.rbegin(), pOutput->histogram.rend());
@@ -82,19 +84,17 @@ public:
 protected:
 	/* Start from node start, then follow a random walk of length nodes, incrementing
 	   the count of all the nodes we visit. */
-	void random_walk(const std::vector<dd_node_t> &nodes, std::vector<uint32_t> &count, \
-			uint32_t seed, unsigned start, unsigned length) const
+	void random_walk(const std::vector<dd_node_t> &nodes, uint32_t *count, \
+			uint32_t seed, unsigned start, unsigned length, unsigned edges) const
 	{
 		uint32_t rng=seed;
 		unsigned current=start;
-		for(unsigned i=0; i<length; i++){
+		while (length--) {
 			//nodes[current].count++;
 			count[current]++;
-
-			unsigned edgeIndex = rng % nodes[current].edges.size();
-			rng=step(rng);
-
+			unsigned edgeIndex = rng % edges;
 			current=nodes[current].edges[edgeIndex];
+			rng=step(rng);
 		}
 	}
 
