@@ -28,6 +28,9 @@ public:
 	) const override {
 		//std::vector<unsigned> dest(pInput->width*pInput->height);
 
+		if (std::max(pInput->width, pInput->height) < 600)
+			goto cpu;
+
 		try {
 			// Enumerate available OpenCL platforms
 			std::vector<cl::Platform> platforms;
@@ -60,6 +63,13 @@ public:
 
 			// Select an OpenCL device
 			int selectedDevice = 0;
+			// Selecting 'Graphics' as default
+			for (unsigned i = 0; i < devices.size(); i++) {
+				if (devices[i].getInfo<CL_DEVICE_NAME>().find("Graphics") != std::string::npos) {
+					selectedDevice = i;
+					break;
+				}
+			}
 			if ((str = getenv("HPCE_SELECT_DEVICE")) != NULL)
 				selectedDevice = atoi(str);
 			cl::Device device = devices.at(selectedDevice);
@@ -122,6 +132,7 @@ public:
 			queue.enqueueBarrier();
 
 			queue.enqueueReadBuffer(destBuffer, CL_TRUE, 0, cbBuffer, &pOutput->pixels[0]);
+			goto done;
 		} catch (const cl::Error &e) {
 			std::cerr << "Exception from " << e.what() << ": ";
 			return;
@@ -130,7 +141,7 @@ public:
 			return;
 		}
 
-#if 0
+cpu:
 		pOutput->pixels.resize(pInput->width*pInput->height);
 
 		juliaFrameRender(
@@ -141,8 +152,8 @@ public:
 				//&dest[0]     //! Array of width*height pixels, with pixel (x,y) at pDest[width*y+x]
 				&pOutput->pixels[0]
 				);
-#endif
 
+done:
 		log->LogInfo("Mapping");
 
 		log->Log(Log_Debug, [&](std::ostream &dst){
