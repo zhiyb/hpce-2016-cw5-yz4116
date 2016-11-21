@@ -1,7 +1,7 @@
 __kernel void ising_spin(
 	__global const uint *seed,
-	__global uint *current, 
-	__global uint *next, 
+	__global int *current, 
+	__global int *next, 
 	__global const uint *probs)
 {
 	uint x = get_global_id(0);
@@ -23,15 +23,45 @@ __kernel void ising_spin(
 
 }
 
-/*__kernel void init(uint n, uint seed, __global uint out)
+__kernel void accumulate(
+	__global const int *in, __global int *out,
+	uint offset
+)
 {
 	uint x = get_global_id(0);
 	uint y = get_global_id(1);
-	uint n = get_global_size(0);
-	for(unsigned x=0; x<n; x++){
-		for(unsigned y=0; y<n; y++){
-			out[y*n+x] = (seed < 0x80001000ul) ? +1 : -1;
-			seed = lcg(seed);
-		}
-	}
-}*/
+	uint bn = get_global_size(0);
+	uint n = get_global_size(1);
+	uint end = min(n, bn * 32);
+	end = min(32u, end - x * 32);
+	in += y * n + x * 32;
+	out += offset + y * bn + x;
+	int s = 0;
+	while (end--)
+		s += *in++;
+	*out = s;
+}
+
+__kernel void init(__global float *out)
+{
+	uint i = get_global_id(0);
+	*(out + i) = 0;
+}
+
+__kernel void sum(
+	__global const int *in, __global float *sums, __global float *sumSquares,
+	uint bs
+)
+{
+	uint i = get_global_id(0);
+	in += i * bs;
+	sums += i;
+	sumSquares += i;
+
+	float s = 0;
+	while (bs--)
+		s += *in++;
+
+	*sums += (float)s;
+	*sumSquares += (float)(s * s);
+}

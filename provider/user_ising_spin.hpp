@@ -61,8 +61,8 @@ public:
 		puzzler::IsingSpinOutput *pOutput
 	) const override {
 
-		std::vector<double> sums(pInput->maxTime * pInput->repeats, 0.0);
-		std::vector<double> sumSquares(pInput->maxTime * pInput->repeats, 0.0);
+		std::vector<float> sums(pInput->maxTime, 0.0);
+		std::vector<float> sumSquares(pInput->maxTime, 0.0);
 		try{
 			std::vector<cl::Platform> platforms;
 
@@ -153,10 +153,11 @@ public:
 
 			// kernel
 			cl::Kernel kernel(program, "ising_spin");
-
+			cl::Kernel kernel_init(program, "init");
+			cl::Kernel kernel_acc(program, "accumulate");
+			cl::Kernel kernel_sum(program, "sum");
 
 			//std::vector<int> current(n*n), next(n*n);
-
 
 			log->LogInfo("Starting steps.");
 
@@ -179,16 +180,22 @@ public:
 			// queue.enqueueWriteBuffer(sumSquaresBuffer, CL_TRUE, 0, cbBuffer, &sumSquares[0]);
 			queue.enqueueWriteBuffer(probBuffer, CL_TRUE, 0, sizeof(unsigned) * prob.size(), &prob[0]);
 
-#if 0
-			std::vector<uint32_t> s(n * n * pInput->repeats);
-			tbb::parallel_for(0u, pInput->repeats, [&](unsigned i){
-				uint32_t seed = seeds[i];
-				for(unsigned j = 0u; j != n*n; j++) {
-					s[j + n*n*i] = seed;
-					seed = lcg(seed);
-				}
-			});
-#endif
+			cl::Buffer sumsBuffer(context, CL_MEM_READ_WRITE, sizeof(float) * pInput->maxTime);
+			cl::Buffer sumSquaresBuffer(context, CL_MEM_READ_WRITE, sizeof(float) * pInput->maxTime);
+			kernel_init.setArg(0, sumsBuffer);
+			queue.enqueueNDRangeKernel(kernel_init, cl::NullRange, cl::NDRange(pInput->maxTime), cl::NullRange);
+			kernel_init.setArg(0, sumSquaresBuffer);
+			queue.enqueueNDRangeKernel(kernel_init, cl::NullRange, cl::NDRange(pInput->maxTime), cl::NullRange);
+
+			uint32_t bn = (n + 31) / 32;
+			std::vector<uint32_t> sum(bn * n * pInput->maxTime);
+			cl::Buffer accBuffer(context, CL_MEM_READ_WRITE, sizeof(uint32_t) * bn * n * pInput->maxTime);
+
+			kernel_sum.setArg(0, accBuffer);
+			kernel_sum.setArg(1, sumsBuffer);
+			kernel_sum.setArg(2, sumSquaresBuffer);
+			kernel_sum.setArg(3, bn * n);
+			kernel_acc.setArg(1, accBuffer);
 
 			std::vector<int32_t> current(n*n), next(n*n);
 			std::vector<uint32_t> s(n * n);
@@ -219,23 +226,18 @@ public:
 					//queue.enqueueBarrier();
 					// Dump the state of spins on high log levels
 					//dump(Log_Debug, pInput, &current[0], log);
-
-					queue.enqueueReadBuffer(nextBuffer, CL_TRUE, 0, cbBuffer, current.data());
-					// step(pInput, seed, &current[0], &next[0]);
+					
+					kernel_acc.setArg(0, nextBuffer);
+					kernel_acc.setArg(2, bn * n * t);
+					queue.enqueueNDRangeKernel(kernel_acc, cl::NullRange, cl::NDRange(bn, n), cl::NullRange);
+						
 					std::swap(currentBuffer, nextBuffer);
-
-					// Track the statistics
-					double countPositive = std::accumulate(&current[0], &current[0] + n * n, 0);
-					sums[i + t * pInput->repeats] = countPositive;
-					sumSquares[i + t * pInput->repeats] = countPositive*countPositive;
 				}
+
+				queue.enqueueNDRangeKernel(kernel_sum, cl::NullRange, cl::NDRange(pInput->maxTime), cl::NullRange);
 			}
-			/*for(unsigned i = 0; i < pInput->repeats; i++)
-			  {
-			  kernel_xy(i, n, &seeds[0], pInput->maxTime, pInput->repeats, &sums[0], &sumSquares[0], &prob[0]);
-			  }*/
-			// queue.enqueueReadBuffer(sumBuffer, CL_TRUE, 0, cbBuffer, &sums[0]);
-			// queue.enqueueReadBuffer(sumSquaresBuffer, CL_TRUE, 0, cbBuffer, &sumSquares[0]);
+			queue.enqueueReadBuffer(sumsBuffer, CL_TRUE, 0, sizeof(float) * pInput->maxTime, &sums[0]);
+			queue.enqueueReadBuffer(sumSquaresBuffer, CL_TRUE, 0, sizeof(float) * pInput->maxTime, &sumSquares[0]);
 		} catch (const cl::Error &e) {
 			std::cerr << "Exception from " << e.what() << ": ";
 			std::map<cl_int, std::string>::const_iterator it;
@@ -251,13 +253,14 @@ public:
 		pOutput->means.resize(pInput->maxTime);
 		pOutput->stddevs.resize(pInput->maxTime);
 		parallel_for(0u, pInput->maxTime, [&](unsigned i){
-			double sum = 0.f, sumSquare = 0.f;
+			double sum = sums[i], sumSquare = sumSquares[i];
+			/*double sum = 0.f, sumSquare = 0.f;
 			double *pSums = &sums[i * pInput->repeats];
 			double *pSumSquares = &sumSquares[i * pInput->repeats];
 			for (unsigned i = 0; i != pInput->repeats; i++) {
 				sum += *pSums++;
 				sumSquare += *pSumSquares++;
-			}
+			}*/
 			pOutput->means[i] = sum / pInput->maxTime;
 			pOutput->stddevs[i] = sqrt( sumSquare/pInput->maxTime - pOutput->means[i]*pOutput->means[i] );
 			log->LogVerbose("  time %u : mean=%8.6f, stddev=%8.4f", i, pOutput->means[i], pOutput->stddevs[i]);
