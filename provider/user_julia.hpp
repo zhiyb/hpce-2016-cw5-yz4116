@@ -1,11 +1,20 @@
 #ifndef user_julia_hpp
 #define user_julia_hpp
 
-#define __CL_ENABLE_EXCEPTIONS
-#include "CL/cl.hpp"
-
 #include <tbb/parallel_for.h>
 #include "puzzler/puzzles/julia.hpp"
+
+#include <fstream>
+
+// Update: this doesn't work in windows - if necessary take it out. It is in
+// here because some unix platforms complained if it wasn't heere.
+#if !defined(WIN32) && !defined(_WIN32)
+#include <alloca.h>
+#endif
+
+#define CL_USE_DEPRECATED_OPENCL_1_1_APIS 
+#define __CL_ENABLE_EXCEPTIONS 
+#include "CL/cl.hpp"
 
 class JuliaProvider : public puzzler::JuliaPuzzle
 {
@@ -19,43 +28,122 @@ public:
 	) const override {
 		//std::vector<unsigned> dest(pInput->width*pInput->height);
 
-#if 0
-		// Enumerate available OpenCL platforms
-		std::vector<cl::Platform> platforms;
+		if (std::max(pInput->width, pInput->height) < 600)
+			goto cpu;
 
-		cl::Platform::get(&platforms);
-		if (platforms.size() == 0)
-			throw std::runtime_error("No OpenCL platforms found.");
+		try {
+			// Enumerate available OpenCL platforms
+			std::vector<cl::Platform> platforms;
 
-		std::clog << "Found " << platforms.size() << " platforms\n";
-		for (unsigned i = 0; i < platforms.size(); i++) {
-			std::string vendor = platforms[i].getInfo<CL_PLATFORM_NAME>();
-			std::clog << "  Platform " << i << " : " << vendor << "\n";
+			cl::Platform::get(&platforms);
+			if (platforms.size() == 0)
+				throw std::runtime_error("No OpenCL platforms found.");
+
+			// Select an OpenCL platform
+			int selectedPlatform = 0;
+			char *str;
+			if ((str = getenv("HPCE_SELECT_PLATFORM")) != NULL)
+				selectedPlatform = atoi(str);
+			cl::Platform platform(platforms.at(selectedPlatform));
+
+			log->Log(Log_Debug, [&](std::ostream &dst) {
+				dst << "Found " << platforms.size() << " platforms\n";
+				for (unsigned i = 0; i < platforms.size(); i++) {
+					std::string vendor = platforms[i].getInfo<CL_PLATFORM_NAME>();
+					dst << "  Platform " << i << " : " << vendor << "\n";
+				}
+				dst << "Choosing platform " << selectedPlatform << ": " << platform.getInfo<CL_PLATFORM_NAME>() << "\n";
+			});
+
+			// Enumerate available OpenCL devices
+			std::vector<cl::Device> devices;
+			platform.getDevices(CL_DEVICE_TYPE_ALL, &devices);	
+			if (devices.size() == 0)
+				throw std::runtime_error("No opencl devices found.");
+
+			// Select an OpenCL device
+			int selectedDevice = 0;
+			// Selecting 'Graphics' as default
+			for (unsigned i = 0; i < devices.size(); i++) {
+				if (devices[i].getInfo<CL_DEVICE_NAME>().find("Graphics") != std::string::npos) {
+					selectedDevice = i;
+					break;
+				}
+			}
+			if ((str = getenv("HPCE_SELECT_DEVICE")) != NULL)
+				selectedDevice = atoi(str);
+			cl::Device device = devices.at(selectedDevice);
+
+			log->Log(Log_Debug, [&](std::ostream &dst) {
+				dst << "Found " << devices.size() << " devices\n";
+				for (unsigned i = 0; i < devices.size(); i++) {
+					std::string name = devices[i].getInfo<CL_DEVICE_NAME>();
+					dst << "  Device " << i << " : " << name << "\n";
+				}
+				dst << "Choosing device " << selectedDevice << ": " << device.getInfo<CL_DEVICE_NAME>() << "\n";
+			});
+
+			log->LogInfo("Starting");
+
+			// Create context for the specified device
+			devices.clear();
+			devices.push_back(device);
+			cl::Context context(devices);
+
+			// Create and compile OpenCL program
+			std::string kernelSource = LoadSource("julia.cl");
+			cl::Program::Sources sources;
+			sources.push_back(std::make_pair(kernelSource.c_str(), kernelSource.size() + 1));
+
+			cl::Program program(context, sources);
+			try {
+				program.build(devices);
+			} catch (...) {
+				for (unsigned i = 0; i < devices.size(); i++) {
+					std::cerr << "Log for device " << devices[i].getInfo<CL_DEVICE_NAME>() << ":\n\n";
+					std::cerr << program.getBuildInfo<CL_PROGRAM_BUILD_LOG>(devices[i]) << "\n\n";
+				}
+				throw;
+			}
+
+			// Allocate buffers
+			size_t cbBuffer = 1 * pInput->width * pInput->height;
+			cl::Buffer destBuffer(context, CL_MEM_WRITE_ONLY, cbBuffer);
+
+			// Create kernel
+			cl::Kernel kernel(program, "julia");
+
+			// Set kernel parameters
+			kernel.setArg(0, sizeof(float) * 2, (void *)&pInput->c);
+			kernel.setArg(1, (unsigned)pInput->maxIter);
+			kernel.setArg(2, destBuffer);
+
+			// Create command queue
+			cl::CommandQueue queue(context, device);
+
+			// Execute the kernel after state buffer copied
+			cl::NDRange offset(0, 0);				// Iteration starting offset
+			cl::NDRange globalSize(pInput->width, pInput->height);	// Global size
+			cl::NDRange localSize = cl::NullRange;			// Local work-groups N/A
+
+			queue.enqueueNDRangeKernel(kernel, offset, globalSize, localSize);
+
+			pOutput->pixels.resize(pInput->width * pInput->height);
+			queue.enqueueBarrier();
+
+			queue.enqueueReadBuffer(destBuffer, CL_TRUE, 0, cbBuffer, &pOutput->pixels[0]);
+			goto done;
+		} catch (const cl::Error &e) {
+			std::cerr << "Exception from " << e.what() << ": ";
+			return;
+		} catch (const std::exception &e) {
+			std::cerr<<"Exception: "<<e.what()<<std::endl;
+			return;
 		}
 
-		// Select an OpenCL platform
-		int selectedPlatform = 0;
-		if (getenv("HPCE_SELECT_PLATFORM"))
-			selectedPlatform = atoi(getenv("HPCE_SELECT_PLATFORM"));
-		std::clog << "Choosing platform " << selectedPlatform << "\n";
-		cl::Platform platform(platforms.at(selectedPlatform));
-
-		// Enumerate available OpenCL devices
-		std::vector<cl::Device> devices;
-		platform.getDevices(CL_DEVICE_TYPE_ALL, &devices);	
-		if (devices.size() == 0)
-			throw std::runtime_error("No opencl devices found.");
-
-		std::clog << "Found " << devices.size() << " devices\n";
-		for (unsigned i = 0; i < devices.size(); i++) {
-			std::string name = devices[i].getInfo<CL_DEVICE_NAME>();
-			std::clog << "  Device " << i << " : " << name << "\n";
-		}
-#endif
-
-		log->LogInfo("Starting");
-
+cpu:
 		pOutput->pixels.resize(pInput->width*pInput->height);
+
 		juliaFrameRender(
 				pInput->width,     //! Number of pixels across
 				pInput->height,    //! Number of rows of pixels
@@ -65,6 +153,7 @@ public:
 				&pOutput->pixels[0]
 				);
 
+done:
 		log->LogInfo("Mapping");
 
 		log->Log(Log_Debug, [&](std::ostream &dst){
@@ -103,29 +192,42 @@ private:
 		tbb::parallel_for(0u, height * width, [&](unsigned i){
 			unsigned y = i / width;
 			unsigned x = i % width;
-		//for(unsigned y=0; y<height; y++){
-			//for(unsigned x=0; x<width; x++){
-				// Map pixel to z_0
-				complex_t z(-1.5f+x*dx, -1.5f+y*dy);
+			complex_t z(-1.5f+x*dx, -1.5f+y*dy);
 
-				//Perform a julia iteration starting at the point z_0, for offset c.
-				//   z_{i+1} = z_{i}^2 + c
-				// The point escapes for the first i where |z_{i}| > 2.
+			//Perform a julia iteration starting at the point z_0, for offset c.
+			//   z_{i+1} = z_{i}^2 + c
+			// The point escapes for the first i where |z_{i}| > 2.
 
-				unsigned iter=0;
-				while(iter<maxIter){
-					if(abs(z) > 2){
-						break;
-					}
-					// Anybody want to refine/tighten this?
-					z = z*z + c;
-					++iter;
+			unsigned iter=0;
+			while(iter<maxIter){
+				if(abs(z) > 2){
+					break;
 				}
-				//pOutput->pixels[i] = (dest[i]==pInput->maxIter) ? 0 : (1+(dest[i]%256));
-				pDest[i] = (iter == maxIter) ? 0 : (1 + iter % 256);
-				//pDest[y*width+x] = iter;
-			//}
+				// Anybody want to refine/tighten this?
+				z = z*z + c;
+				++iter;
+			}
+			//pOutput->pixels[i] = (dest[i]==pInput->maxIter) ? 0 : (1+(dest[i]%256));
+			pDest[i] = (iter == maxIter) ? 0 : (1 + iter % 256);
+			//pDest[y*width+x] = iter;
 		});
+	}
+
+	std::string LoadSource(const char *fileName) const
+	{
+		std::string baseDir = "provider";
+		char *str;
+		if ((str = getenv("HPCE_CL_SRC_DIR")) != NULL)
+			baseDir = str;
+		std::string fullName = baseDir + "/" + fileName;
+
+		std::ifstream src(fullName, std::ios::in | std::ios::binary);
+		if (!src.is_open())
+			throw std::runtime_error("LoadSource : Couldn't load cl file from '" + fullName + "'.");
+
+		return std::string(
+				std::istreambuf_iterator<char>(src),
+				std::istreambuf_iterator<char>());
 	}
 };
 
