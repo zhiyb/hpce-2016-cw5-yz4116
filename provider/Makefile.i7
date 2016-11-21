@@ -1,0 +1,16 @@
+SHELL = /bin/bash
+CXX = /init g++
+
+CPPFLAGS += -std=c++11 -W -Wall  -g
+CPPFLAGS += -O3
+CPPFLAGS += -I ../include
+CPPFLAGS += -I 'C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v8.0\include'
+CPPFLAGS += -Wno-unused-parameter -Wno-deprecated-declarations -Wno-ignored-qualifiers -Wno-ignored-attributes
+
+puzzles.o : $(wildcard *.hpp) $(wildcard ../include/puzzler/*.hpp ../include/puzzler/*/*.hpp)
+
+../lib/libpuzzler.a : puzzles.o
+	-mkdir -p ../lib
+	ar cr ../lib/libpuzzler.a puzzles.o
+
+all : ../lib/libpuzzler.a

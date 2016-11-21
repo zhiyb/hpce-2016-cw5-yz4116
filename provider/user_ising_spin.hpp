@@ -11,37 +11,58 @@
 #define __CL_ENABLE_EXCEPTIONS
 #include "CL/cl.hpp"
 
+#define DEBUG_CL
+
 using namespace tbb;
 
 class IsingSpinProvider : public puzzler::IsingSpinPuzzle
 {
 public:
-	IsingSpinProvider() {}
+	IsingSpinProvider()
+	{
+#ifdef DEBUG_CL
+#define ERRMAP(e)	errmap[e] = # e
+		ERRMAP(CL_BUILD_PROGRAM_FAILURE);
+		ERRMAP(CL_COMPILER_NOT_AVAILABLE);
+		ERRMAP(CL_DEVICE_NOT_AVAILABLE);
+		ERRMAP(CL_INVALID_ARG_INDEX);
+		ERRMAP(CL_INVALID_ARG_SIZE);
+		ERRMAP(CL_INVALID_ARG_VALUE);
+		ERRMAP(CL_INVALID_BINARY);
+		ERRMAP(CL_INVALID_BUFFER_SIZE);
+		ERRMAP(CL_INVALID_BUILD_OPTIONS);
+		ERRMAP(CL_INVALID_COMMAND_QUEUE);
+		ERRMAP(CL_INVALID_CONTEXT);
+		ERRMAP(CL_INVALID_DEVICE);
+		ERRMAP(CL_INVALID_EVENT_WAIT_LIST);
+		ERRMAP(CL_INVALID_GLOBAL_OFFSET);
+		ERRMAP(CL_INVALID_HOST_PTR);
+		ERRMAP(CL_INVALID_KERNEL);
+		ERRMAP(CL_INVALID_KERNEL_ARGS);
+		ERRMAP(CL_INVALID_MEM_OBJECT);
+		ERRMAP(CL_INVALID_OPERATION);
+		ERRMAP(CL_INVALID_PROGRAM_EXECUTABLE);
+		ERRMAP(CL_INVALID_PROPERTY);
+		ERRMAP(CL_INVALID_SAMPLER);
+		ERRMAP(CL_INVALID_VALUE);
+		ERRMAP(CL_INVALID_WORK_DIMENSION);
+		ERRMAP(CL_INVALID_WORK_GROUP_SIZE);
+		ERRMAP(CL_INVALID_WORK_ITEM_SIZE);
+		ERRMAP(CL_MEM_OBJECT_ALLOCATION_FAILURE);
+		ERRMAP(CL_OUT_OF_HOST_MEMORY);
+		ERRMAP(CL_OUT_OF_RESOURCES);
+		ERRMAP(CL_SUCCESS);
+#endif	// DEBUG_CL
+	}
 
 	virtual void Execute(
-			puzzler::ILog *log,
-			const IsingSpinInput *pInput,
-			puzzler::IsingSpinOutput *pOutput
-			) const override {
-		std::map<cl_int, std::string> errmap;
+		puzzler::ILog *log,
+		const IsingSpinInput *pInput,
+		puzzler::IsingSpinOutput *pOutput
+	) const override {
 
-#define ERRMAP(e)	errmap[e] = # e
-		ERRMAP(CL_SUCCESS);
-		ERRMAP(CL_INVALID_PROPERTY);
-		ERRMAP(CL_INVALID_VALUE);
-		ERRMAP(CL_INVALID_DEVICE);
-		ERRMAP(CL_DEVICE_NOT_AVAILABLE);
-		ERRMAP(CL_OUT_OF_HOST_MEMORY);
-		ERRMAP(CL_INVALID_BINARY);
-		ERRMAP(CL_INVALID_BUILD_OPTIONS);
-		ERRMAP(CL_INVALID_OPERATION);
-		ERRMAP(CL_COMPILER_NOT_AVAILABLE);
-		ERRMAP(CL_BUILD_PROGRAM_FAILURE);
-		ERRMAP(CL_OUT_OF_RESOURCES);
-		ERRMAP(CL_OUT_OF_HOST_MEMORY);
-
-			std::vector<double> sums(pInput->maxTime * pInput->repeats, 0.0);
-			std::vector<double> sumSquares(pInput->maxTime * pInput->repeats, 0.0);
+		std::vector<double> sums(pInput->maxTime * pInput->repeats, 0.0);
+		std::vector<double> sumSquares(pInput->maxTime * pInput->repeats, 0.0);
 		try{
 			std::vector<cl::Platform> platforms;
 
@@ -119,13 +140,15 @@ public:
 
 			unsigned n=pInput->n;
 			// size_t cbBuffer = 1 * pInput->maxTime * pInput->repeats;
-			size_t cbBuffer = 1 * n * n;
+			size_t cbBuffer = sizeof(uint32_t) * n * n;
 			// size_t seBuffer = pInput->repeats;
 			// cl::Buffer sumBuffer(context, CL_MEM_WRITE_ONLY, cbBuffer);
 			// cl::Buffer sumSquaresBuffer(context, CL_MEM_WRITE_ONLY, cbBuffer);
-			cl::Buffer probBuffer(context, CL_MEM_READ_ONLY, cbBuffer);
-			cl::Buffer seedsBuffer(context, CL_MEM_READ_WRITE, pcbBuffer);
 			std::vector<unsigned> prob(pInput->probs);	
+			cl::Buffer probBuffer(context, CL_MEM_READ_ONLY, sizeof(unsigned) * pInput->probs.size());
+			cl::Buffer seedBuffer(context, CL_MEM_READ_ONLY, cbBuffer);
+			cl::Buffer currentBuffer(context, CL_MEM_READ_WRITE, cbBuffer);
+			cl::Buffer nextBuffer(context, CL_MEM_READ_WRITE, cbBuffer);
 
 
 			// kernel
@@ -148,53 +171,78 @@ public:
 			// kernel.setArg(1, seedsBuffer);
 			// kernel.setArg(4, sumBuffer);
 			// kernel.setArg(5, sumSquaresBuffer);
+			kernel.setArg(0, seedBuffer);
 			kernel.setArg(3, probBuffer);
 
 			cl::CommandQueue queue(context, device);
 			// queue.enqueueWriteBuffer(sumBuffer, CL_TRUE, 0, cbBuffer, &sums[0]);
 			// queue.enqueueWriteBuffer(sumSquaresBuffer, CL_TRUE, 0, cbBuffer, &sumSquares[0]);
-			queue.enqueueWriteBuffer(probBuffer, CL_TRUE, 0, cbBuffer, &prob[0]);
+			queue.enqueueWriteBuffer(probBuffer, CL_TRUE, 0, sizeof(unsigned) * prob.size(), &prob[0]);
 
-			cl::NDRange offset(0, 0);
-			cl::NDRange globalSize(n, n);
-			cl::NDRange localSize = cl::NullRange;
-			tbb::parallel_for(0u, pInput->repeats, [=, &seeds, &log, &sums, &sumSquares](unsigned i){
-					std::vector<int> current(n*n), next(n*n);
-					uint32_t seed = seeds[i];
+#if 0
+			std::vector<uint32_t> s(n * n * pInput->repeats);
+			tbb::parallel_for(0u, pInput->repeats, [&](unsigned i){
+				uint32_t seed = seeds[i];
+				for(unsigned j = 0u; j != n*n; j++) {
+					s[j + n*n*i] = seed;
+					seed = lcg(seed);
+				}
+			});
+#endif
 
-					//log->LogVerbose("  Repeat %u", i);
+			std::vector<int32_t> current(n*n), next(n*n);
+			std::vector<uint32_t> s(n * n);
+			for (unsigned i = 0u; i < pInput->repeats; i++) {
+				//log->LogVerbose("  Repeat %u", i);
 
-					//size_t idx = i * n * n;
-					init(pInput, seed, &current[0]);
+				uint32_t seed = seeds[i];
+				init(pInput->n, seed, &current[0]);
+				//size_t idx = i * n * n;
+				queue.enqueueWriteBuffer(currentBuffer, CL_TRUE, 0, cbBuffer, &current[0]);
 
-					for(unsigned t=0; t<pInput->maxTime; t++){
-					std::vector<uint32_t> s(n*n);
-					for(&seed: s)
+				for(unsigned t=0; t<pInput->maxTime; t++){
+          				// Dump the state of spins on high log levels
+					//dump(Log_Debug, pInput, &current[0], log);
+
+					for(unsigned j = 0u; j != n*n; j++) {
+						s[j] = seed;
 						seed = lcg(seed);
-					kernel.setArg(0, seedBuffer);
-					queue.enqueueWriteBuffer(seedsBuffer, CL_TRUE, 0, cbBuffer, &s[0]);
+					}
+					queue.enqueueWriteBuffer(seedBuffer, CL_TRUE, 0, cbBuffer, &s[0]);
+
+					kernel.setArg(1, currentBuffer);
+					kernel.setArg(2, nextBuffer);
+					cl::NDRange offset(0, 0);
+					cl::NDRange globalSize(n, n);
+					cl::NDRange localSize = cl::NullRange;
 					queue.enqueueNDRangeKernel(kernel, offset, globalSize, localSize);
-					queue.enqueueBarrier();
+					//queue.enqueueBarrier();
 					// Dump the state of spins on high log levels
 					//dump(Log_Debug, pInput, &current[0], log);
 
+					queue.enqueueReadBuffer(nextBuffer, CL_TRUE, 0, cbBuffer, current.data());
 					// step(pInput, seed, &current[0], &next[0]);
-					std::swap(current, next);
+					std::swap(currentBuffer, nextBuffer);
 
 					// Track the statistics
-					double countPositive=count(pInput, &current[0]);
+					double countPositive = std::accumulate(&current[0], &current[0] + n * n, 0);
 					sums[i + t * pInput->repeats] = countPositive;
 					sumSquares[i + t * pInput->repeats] = countPositive*countPositive;
-					}
-			});
+				}
+			}
 			/*for(unsigned i = 0; i < pInput->repeats; i++)
 			  {
 			  kernel_xy(i, n, &seeds[0], pInput->maxTime, pInput->repeats, &sums[0], &sumSquares[0], &prob[0]);
 			  }*/
 			// queue.enqueueReadBuffer(sumBuffer, CL_TRUE, 0, cbBuffer, &sums[0]);
 			// queue.enqueueReadBuffer(sumSquaresBuffer, CL_TRUE, 0, cbBuffer, &sumSquares[0]);
-		}catch (const cl::Error &e) {
+		} catch (const cl::Error &e) {
 			std::cerr << "Exception from " << e.what() << ": ";
+			std::map<cl_int, std::string>::const_iterator it;
+			if ((it = errmap.find(e.err())) != errmap.end())
+				std::cerr << it->second << std::endl;
+			else
+				std::cerr << "Unknown " << e.err() << std::endl;
 			return;
 		}
 
@@ -203,33 +251,33 @@ public:
 		pOutput->means.resize(pInput->maxTime);
 		pOutput->stddevs.resize(pInput->maxTime);
 		parallel_for(0u, pInput->maxTime, [&](unsigned i){
-				double sum = 0.f, sumSquare = 0.f;
-				double *pSums = &sums[i * pInput->repeats];
-				double *pSumSquares = &sumSquares[i * pInput->repeats];
-				for (unsigned i = 0; i != pInput->repeats; i++) {
+			double sum = 0.f, sumSquare = 0.f;
+			double *pSums = &sums[i * pInput->repeats];
+			double *pSumSquares = &sumSquares[i * pInput->repeats];
+			for (unsigned i = 0; i != pInput->repeats; i++) {
 				sum += *pSums++;
 				sumSquare += *pSumSquares++;
-				}
-				pOutput->means[i] = sum / pInput->maxTime;
-				pOutput->stddevs[i] = sqrt( sumSquare/pInput->maxTime - pOutput->means[i]*pOutput->means[i] );
-				log->LogVerbose("  time %u : mean=%8.6f, stddev=%8.4f", i, pOutput->means[i], pOutput->stddevs[i]);
-				});
+			}
+			pOutput->means[i] = sum / pInput->maxTime;
+			pOutput->stddevs[i] = sqrt( sumSquare/pInput->maxTime - pOutput->means[i]*pOutput->means[i] );
+			log->LogVerbose("  time %u : mean=%8.6f, stddev=%8.4f", i, pOutput->means[i], pOutput->stddevs[i]);
+		});
 
 		log->LogInfo("Finished");
 	}
 private:
+	std::map<cl_int, std::string> errmap;
+
 	uint32_t lcg(uint32_t x) const
 	{
 		return x*1664525+1013904223;
 	}
 
 	void init(
-		const IsingSpinInput *pInput,
+		unsigned n,
 		uint32_t &seed,
-		int *out
+		int32_t *out
 	 ) const {
-		unsigned n=pInput->n;
-
 		for(unsigned x=0; x<n; x++){
 			for(unsigned y=0; y<n; y++){
 				out[y*n+x] = (seed < 0x80001000ul) ? +1 : -1;
@@ -238,19 +286,28 @@ private:
 		}
 	}
 
-	int count(
+	void dump(
+		int logLevel,
 		const IsingSpinInput *pInput,
-		const int *in
+		int *in,
+		ILog *log
 	 ) const {
+		if(logLevel > log->Level())
+			return;
+
 		unsigned n=pInput->n;
 
-		return std::accumulate(in, in+n*n, 0);
+		log->Log(logLevel, [&](std::ostream &dst){
+			dst<<"\n";
+			for(unsigned y=0; y<n; y++){
+				for(unsigned x=0; x<n; x++){
+					dst<<(in[y*n+x]<0?"-":"+");
+				} 
+				dst<<"\n";
+			}
+		});
 	}
 
-	uint32_t lcg(uint32_t x) const
-	{
-		return x*1664525+1013904223;
-	}
 	std::string LoadSource(const char *fileName) const
 	{
 		std::string baseDir = "provider";

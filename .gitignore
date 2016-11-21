@@ -15,6 +15,7 @@
 *.time
 *.real
 *.dat
+*.swo
 out
 
 w/
