@@ -96,8 +96,8 @@ public:
 			starts[i] = rng() % nodesCount;    // Choose a random node
 		}
 
-		std::vector<unsigned> edges(nodesCount * edgesCount);
-		std::vector<uint32_t> counts(nodesCount);
+		if (nodesCount < 4000)
+			goto cpu;
 
 		try {
 			// Enumerate available OpenCL platforms
@@ -171,6 +171,8 @@ public:
 			cl::Buffer buffStarts(context, CL_MEM_READ_ONLY, sizeof(unsigned) * starts.size());
 			queue.enqueueWriteBuffer(buffStarts, CL_FALSE, 0, sizeof(unsigned) * starts.size(), starts.data());
 
+			std::vector<uint32_t> counts(nodesCount);
+			std::vector<unsigned> edges(nodesCount * edgesCount);
 			unsigned *cptr = counts.data(), *eptr = edges.data();
 			for (const dd_node_t &node: nodes) {
 				*cptr++ = node.count;
@@ -185,11 +187,14 @@ public:
 			uint32_t blockSize = allocmem / sizeof(uint32_t) / nodesCount;
 			blockSize = std::min(blockSize, pInput->numSamples);
 			uint32_t blockCount = (pInput->numSamples + blockSize - 1) / blockSize;
-			cl::Buffer buffCount(context, CL_MEM_READ_WRITE, sizeof(uint32_t) * nodesCount * blockSize);
 
 			// Summarise and output buffer
 			cl::Buffer buffSum(context, CL_MEM_READ_WRITE, sizeof(uint32_t) * nodesCount * (blockCount + 1));
 			queue.enqueueWriteBuffer(buffSum, CL_FALSE, 0, sizeof(uint32_t) * counts.size(), counts.data());
+
+			// The working buffer
+			cl::Buffer buffCount(context, CL_MEM_READ_WRITE, sizeof(uint32_t) * nodesCount * blockSize);
+			std::vector<uint32_t> zeros(sizeof(uint32_t) * nodesCount * blockSize);
 
 			// Create and compile OpenCL program
 			std::string kernelSource = LoadSource("random_walk.cl");
@@ -226,11 +231,12 @@ public:
 			// Execute the kernel
 			for (uint32_t i = 0; i != blockCount; i++) {
 				uint32_t size = std::min(blockSize, pInput->numSamples - i * blockSize);
+				//queue.enqueueFillBuffer(buffCount, 0u, 0, size * nodesCount * sizeof(uint32_t));
+				queue.enqueueWriteBuffer(buffCount, CL_FALSE, 0, sizeof(uint32_t) * nodesCount * size, zeros.data());
 				kernel.setArg(7, i * blockSize);
 				cl::NDRange offset(0);			// Iteration starting offset
 				cl::NDRange globalSize(size);		// Global size
 				cl::NDRange localSize = cl::NullRange;	// Local work-groups N/A
-				//queue.enqueueFillBuffer(buffCount, 0u, 0, size * sizeof(uint32_t));
 				//queue.enqueueBarrier();
 				queue.enqueueNDRangeKernel(kernel, offset, globalSize, localSize);
 				kernel_comb.setArg(0, size);
@@ -247,8 +253,18 @@ public:
 			//queue.enqueueBarrier();
 			queue.enqueueNDRangeKernel(kernel_comb, cl::NDRange(0), cl::NDRange(nodesCount), cl::NullRange);
 
+			log->LogVerbose("Done random walks, converting histogram");
+
+			// Map the counts from the nodes back into an array
+			pOutput->histogram.resize(nodes.size());
+
 			//queue.enqueueBarrier();
 			queue.enqueueReadBuffer(buffSum, CL_TRUE, 0, sizeof(uint32_t) * counts.size(), counts.data());
+
+			//tbb::parallel_for((size_t)0, nodes.size(), [&](size_t i){
+			for (size_t i = 0; i != nodes.size(); i++)
+				pOutput->histogram[i] = std::make_pair(uint32_t(counts[i]), uint32_t(i));
+			//});
 			goto done;
 		} catch (const cl::Error &e) {
 			std::cerr << "Exception from " << e.what() << ": ";
@@ -263,32 +279,34 @@ public:
 			return;
 		}
 
-#if 0
-		std::vector<uint32_t> count(pInput->numSamples * nodesCount);
+cpu:		{
+			std::vector<uint32_t> count(pInput->numSamples * nodesCount);
+			std::vector<unsigned> edges(nodesCount * edgesCount);
+			unsigned *eptr = edges.data();
+			for (const dd_node_t &node: nodes)
+				for (const uint32_t &edge: node.edges)
+					*eptr++ = edge;
 
-		//log->LogVerbose("Starting random walks");
+			//log->LogVerbose("Starting random walks");
 
-		tbb::parallel_for(0u, pInput->numSamples, [&, nodesCount, length, edgesCount](unsigned i){
-			random_walk(&edges[0], &count[i * nodesCount], seeds[i], starts[i], length, edgesCount);
-		});
+			tbb::parallel_for(0u, pInput->numSamples, [&, nodesCount, length, edgesCount](unsigned i){
+				random_walk(&edges[0], &count[i * nodesCount], seeds[i], starts[i], length, edgesCount);
+			});
 
-#endif
+			log->LogVerbose("Done random walks, converting histogram");
 
+			// Map the counts from the nodes back into an array
+			pOutput->histogram.resize(nodes.size());
+			tbb::parallel_for((size_t)0, nodes.size(), [&](size_t i){
+				uint32_t cnt = nodes[i].count;
+				for (unsigned j = 0; j != pInput->numSamples; j++)
+					cnt += count[j * nodes.size() + i];
+				pOutput->histogram[i]=std::make_pair(uint32_t(cnt),uint32_t(i));
+			});
+		}
 done:
-		log->LogVerbose("Done random walks, converting histogram");
-
-		// Map the counts from the nodes back into an array
-		pOutput->histogram.resize(nodes.size());
-		tbb::parallel_for((size_t)0, nodes.size(), [&](size_t i){
-			//uint32_t cnt = nodes[i].count;
-			//for (unsigned j = 0; j != pInput->numSamples; j++)
-			//	cnt += count[j * nodes.size() + i];
-			uint32_t cnt = counts[i];
-			pOutput->histogram[i]=std::make_pair(uint32_t(cnt),uint32_t(i));
-		});
 		// Order them by how often they were visited
 		std::sort(pOutput->histogram.rbegin(), pOutput->histogram.rend());
-
 
 		// Debug only. No cost in normal execution
 		log->Log(Log_Debug, [&](std::ostream &dst){
