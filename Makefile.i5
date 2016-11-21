@@ -2,11 +2,11 @@ SHELL = /bin/bash
 CXX = /init g++
 OS = Windows_NT
 
-CPPFLAGS += -std=c++11 -W -Wall  -g
-CPPFLAGS += -O3
+CPPFLAGS += -std=c++11
+CPPFLAGS += -O3 -g
 CPPFLAGS += -I include
 CPPFLAGS += -I 'C:\Program Files (x86)\Intel\OpenCL SDK\6.3\include'
-CPPFLAGS += -Wno-unused-parameter -Wno-deprecated-declarations -Wno-ignored-attributes -Wno-ignored-qualifiers
+CPPFLAGS += -W -Wall -Wno-unused-parameter -Wno-deprecated-declarations -Wno-ignored-attributes -Wno-ignored-qualifiers
 
 LDFLAGS += -L 'C:\Program Files (x86)\Intel\OpenCL SDK\6.3\lib\x64'
 

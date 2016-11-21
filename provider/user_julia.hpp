@@ -1,6 +1,9 @@
 #ifndef user_julia_hpp
 #define user_julia_hpp
 
+#include <tbb/parallel_for.h>
+#include "puzzler/puzzles/julia.hpp"
+
 #include <fstream>
 
 // Update: this doesn't work in windows - if necessary take it out. It is in
@@ -12,9 +15,6 @@
 #define CL_USE_DEPRECATED_OPENCL_1_1_APIS 
 #define __CL_ENABLE_EXCEPTIONS 
 #include "CL/cl.hpp"
-
-#include <tbb/parallel_for.h>
-#include "puzzler/puzzles/julia.hpp"
 
 class JuliaProvider : public puzzler::JuliaPuzzle
 {
@@ -121,7 +121,7 @@ public:
 			// Create command queue
 			cl::CommandQueue queue(context, device);
 
-			// Execute the kernel after state buffer coopied
+			// Execute the kernel after state buffer copied
 			cl::NDRange offset(0, 0);				// Iteration starting offset
 			cl::NDRange globalSize(pInput->width, pInput->height);	// Global size
 			cl::NDRange localSize = cl::NullRange;			// Local work-groups N/A
