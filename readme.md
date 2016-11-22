@@ -218,6 +218,8 @@ The function needs to be optimised is the "next()". The "main()" function is seq
 
 In addition, the variable type "bool" cannot be used in tbb, so the vector should be changed into unsigned first as the code represent. After calculating, the result will be write back to the original "bool" vector.
 
+Furthermore, we have tried the task_group in the calcSrc(), but it will decrease the speed of the execution. So we delete the task_group. The final version of the program is pure TBB parallel_for version. 
+
 Verification
 ============
 
