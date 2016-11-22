@@ -3,6 +3,7 @@ CXX = /init g++
 
 CPPFLAGS += -std=c++11 -W -Wall  -g
 CPPFLAGS += -O3
+CPPFLAGS += -DWIN32 -DDEBUG_CL
 CPPFLAGS += -I ../include
 CPPFLAGS += -I 'C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v8.0\include'
 CPPFLAGS += -Wno-unused-parameter -Wno-deprecated-declarations -Wno-ignored-qualifiers -Wno-ignored-attributes

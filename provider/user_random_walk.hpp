@@ -16,8 +16,6 @@
 #define __CL_ENABLE_EXCEPTIONS 
 #include "CL/cl.hpp"
 
-#define DEBUG_CL
-
 using namespace puzzler;
 
 class RandomWalkProvider
@@ -131,6 +129,7 @@ public:
 
 			// Select an OpenCL device
 			int selectedDevice = 0;
+#ifdef DEBUG_CL
 			// Selecting 'Graphics' as default
 			for (unsigned i = 0; i < devices.size(); i++) {
 				if (devices[i].getInfo<CL_DEVICE_NAME>().find("Graphics") != std::string::npos) {
@@ -138,6 +137,7 @@ public:
 					break;
 				}
 			}
+#endif
 			if ((str = getenv("HPCE_SELECT_DEVICE")) != NULL)
 				selectedDevice = atoi(str);
 			cl::Device device = devices.at(selectedDevice);
@@ -171,17 +171,24 @@ public:
 			cl::Buffer buffStarts(context, CL_MEM_READ_ONLY, sizeof(unsigned) * starts.size());
 			queue.enqueueWriteBuffer(buffStarts, CL_FALSE, 0, sizeof(unsigned) * starts.size(), starts.data());
 
+			cl::Buffer buffEdges(context, CL_MEM_READ_ONLY, sizeof(unsigned) * nodesCount * edgesCount);
+
 			std::vector<uint32_t> counts(nodesCount);
 			std::vector<unsigned> edges(nodesCount * edgesCount);
-			unsigned *cptr = counts.data(), *eptr = edges.data();
+			//unsigned /**cptr = counts.data(),*/ *eptr = edges.data();
+			uint32_t offset = 0;
 			for (const dd_node_t &node: nodes) {
-				*cptr++ = node.count;
-				for (const uint32_t &edge: node.edges)
+				//*cptr++ = node.count;
+				/*for (const uint32_t &edge: node.edges) {
 					*eptr++ = edge;
+				}*/
+				queue.enqueueWriteBuffer(buffEdges, CL_FALSE, offset, \
+						sizeof(unsigned) * edgesCount, node.edges.data());
+				offset += sizeof(unsigned) * edgesCount;
 			}
 
-			cl::Buffer buffEdges(context, CL_MEM_READ_ONLY, sizeof(unsigned) * edges.size());
-			queue.enqueueWriteBuffer(buffEdges, CL_FALSE, 0, sizeof(unsigned) * edges.size(), edges.data());
+			//cl::Buffer buffEdges(context, CL_MEM_READ_ONLY, sizeof(unsigned) * edges.size());
+			//queue.enqueueWriteBuffer(buffEdges, CL_FALSE, 0, sizeof(unsigned) * edges.size(), edges.data());
 
 			// Split working buffer because of CL_DEVICE_MAX_MEM_ALLOC_SIZE limitation
 			uint32_t blockSize = allocmem / sizeof(uint32_t) / nodesCount;
@@ -189,12 +196,11 @@ public:
 			uint32_t blockCount = (pInput->numSamples + blockSize - 1) / blockSize;
 
 			// Summarise and output buffer
-			cl::Buffer buffSum(context, CL_MEM_READ_WRITE, sizeof(uint32_t) * nodesCount * (blockCount + 1));
-			queue.enqueueWriteBuffer(buffSum, CL_FALSE, 0, sizeof(uint32_t) * counts.size(), counts.data());
+			cl::Buffer buffSum(context, CL_MEM_READ_WRITE, sizeof(uint32_t) * nodesCount * blockCount);
+			//queue.enqueueWriteBuffer(buffSum, CL_FALSE, 0, sizeof(uint32_t) * counts.size(), counts.data());
 
 			// The working buffer
 			cl::Buffer buffCount(context, CL_MEM_READ_WRITE, sizeof(uint32_t) * nodesCount * blockSize);
-			std::vector<uint32_t> zeros(sizeof(uint32_t) * nodesCount * blockSize);
 
 			// Create and compile OpenCL program
 			std::string kernelSource = LoadSource("random_walk.cl");
@@ -232,7 +238,6 @@ public:
 			for (uint32_t i = 0; i != blockCount; i++) {
 				uint32_t size = std::min(blockSize, pInput->numSamples - i * blockSize);
 				//queue.enqueueFillBuffer(buffCount, 0u, 0, size * nodesCount * sizeof(uint32_t));
-				queue.enqueueWriteBuffer(buffCount, CL_FALSE, 0, sizeof(uint32_t) * nodesCount * size, zeros.data());
 				kernel.setArg(7, i * blockSize);
 				cl::NDRange offset(0);			// Iteration starting offset
 				cl::NDRange globalSize(size);		// Global size
@@ -240,18 +245,20 @@ public:
 				//queue.enqueueBarrier();
 				queue.enqueueNDRangeKernel(kernel, offset, globalSize, localSize);
 				kernel_comb.setArg(0, size);
-				kernel_comb.setArg(2, i + 1);
+				kernel_comb.setArg(2, i /*+ 1*/);
 				//queue.enqueueBarrier();
 				queue.enqueueNDRangeKernel(kernel_comb, cl::NDRange(0), cl::NDRange(nodesCount), cl::NullRange);
 			}
 
-			// Summarise
-			kernel_comb.setArg(0, blockCount + 1);
-			kernel_comb.setArg(1, buffSum);
-			kernel_comb.setArg(2, 0);
-			kernel_comb.setArg(3, buffSum);
-			//queue.enqueueBarrier();
-			queue.enqueueNDRangeKernel(kernel_comb, cl::NDRange(0), cl::NDRange(nodesCount), cl::NullRange);
+			if (blockCount != 1) {
+				// Summarise
+				kernel_comb.setArg(0, blockCount /*+ 1*/);
+				kernel_comb.setArg(1, buffSum);
+				kernel_comb.setArg(2, 0);
+				kernel_comb.setArg(3, buffSum);
+				//queue.enqueueBarrier();
+				queue.enqueueNDRangeKernel(kernel_comb, cl::NDRange(0), cl::NDRange(nodesCount), cl::NullRange);
+			}
 
 			log->LogVerbose("Done random walks, converting histogram");
 
@@ -261,10 +268,10 @@ public:
 			//queue.enqueueBarrier();
 			queue.enqueueReadBuffer(buffSum, CL_TRUE, 0, sizeof(uint32_t) * counts.size(), counts.data());
 
-			//tbb::parallel_for((size_t)0, nodes.size(), [&](size_t i){
-			for (size_t i = 0; i != nodes.size(); i++)
+			tbb::parallel_for((size_t)0, nodes.size(), [&](size_t i){
+			//for (size_t i = 0; i != nodes.size(); i++)
 				pOutput->histogram[i] = std::make_pair(uint32_t(counts[i]), uint32_t(i));
-			//});
+			});
 			goto done;
 		} catch (const cl::Error &e) {
 			std::cerr << "Exception from " << e.what() << ": ";
@@ -281,16 +288,11 @@ public:
 
 cpu:		{
 			std::vector<uint32_t> count(pInput->numSamples * nodesCount);
-			std::vector<unsigned> edges(nodesCount * edgesCount);
-			unsigned *eptr = edges.data();
-			for (const dd_node_t &node: nodes)
-				for (const uint32_t &edge: node.edges)
-					*eptr++ = edge;
 
 			//log->LogVerbose("Starting random walks");
 
 			tbb::parallel_for(0u, pInput->numSamples, [&, nodesCount, length, edgesCount](unsigned i){
-				random_walk(&edges[0], &count[i * nodesCount], seeds[i], starts[i], length, edgesCount);
+				random_walk(pInput->nodes, &count[i * nodesCount], seeds[i], starts[i], length, edgesCount);
 			});
 
 			log->LogVerbose("Done random walks, converting histogram");
@@ -298,7 +300,7 @@ cpu:		{
 			// Map the counts from the nodes back into an array
 			pOutput->histogram.resize(nodes.size());
 			tbb::parallel_for((size_t)0, nodes.size(), [&](size_t i){
-				uint32_t cnt = nodes[i].count;
+				uint32_t cnt = 0;//nodes[i].count;
 				for (unsigned j = 0; j != pInput->numSamples; j++)
 					cnt += count[j * nodes.size() + i];
 				pOutput->histogram[i]=std::make_pair(uint32_t(cnt),uint32_t(i));
@@ -321,7 +323,7 @@ done:
 protected:
 	/* Start from node start, then follow a random walk of length nodes, incrementing
 	   the count of all the nodes we visit. */
-	void random_walk(const unsigned *edges, uint32_t *count, \
+	void random_walk(const std::vector<dd_node_t> &nodes, uint32_t *count, \
 			uint32_t seed, unsigned start, unsigned length, unsigned edgesCount) const
 	{
 		uint32_t rng=seed;
@@ -329,7 +331,9 @@ protected:
 		while (length--) {
 			//nodes[current].count++;
 			count[current]++;
-			current = edges[current * edgesCount + rng % edgesCount];
+			const dd_node_t &node = nodes[current];
+			unsigned edgeIndex = rng % edgesCount;
+			current = node.edges[edgeIndex];
 			rng = step(rng);
 		}
 	}

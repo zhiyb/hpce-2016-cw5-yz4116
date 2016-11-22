@@ -3,7 +3,7 @@ CXX = /init g++
 
 CPPFLAGS += -std=c++11
 CPPFLAGS += -O3 -g
-CPPFLAGS += -DWIN32
+CPPFLAGS += -DWIN32 -DDEBUG_CL
 CPPFLAGS += -I ../include
 CPPFLAGS += -I 'C:\Program Files (x86)\Intel\OpenCL SDK\6.3\include'
 CPPFLAGS += -W -Wall -Wno-unused-parameter -Wno-deprecated-declarations -Wno-ignored-attributes -Wno-ignored-qualifiers

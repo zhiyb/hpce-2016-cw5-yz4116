@@ -11,10 +11,10 @@ __kernel void random_walk(__global const unsigned *edges, __global uint *count, 
 	unsigned current = *(start + i);
 	
 	// Initialise output buffer
-	/*__global uint *ptr = count;
+	__global uint *ptr = count;
 	uint s = nodesCount;
 	while (s--)
-		*ptr++ = 0;*/
+		*ptr++ = 0;
 
 	while (len--) {
 		//nodes[current].count++;

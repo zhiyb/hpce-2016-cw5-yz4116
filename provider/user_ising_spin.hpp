@@ -12,8 +12,6 @@
 #define __CL_ENABLE_EXCEPTIONS
 #include "CL/cl.hpp"
 
-#define DEBUG_CL
-
 using namespace tbb;
 
 class IsingSpinProvider : public puzzler::IsingSpinPuzzle

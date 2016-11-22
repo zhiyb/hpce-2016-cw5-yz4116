@@ -208,7 +208,8 @@ private:
 				++iter;
 			}
 			//pOutput->pixels[i] = (dest[i]==pInput->maxIter) ? 0 : (1+(dest[i]%256));
-			pDest[i] = (iter == maxIter) ? 0 : (1 + iter % 256);
+			//pDest[i] = (iter == maxIter) ? 0 : (1 + iter % 256);
+			pDest[i] = (iter + 1) % (maxIter + 1);
 			//pDest[y*width+x] = iter;
 		});
 	}
