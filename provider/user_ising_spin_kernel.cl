@@ -28,13 +28,14 @@ __kernel void accumulate(
 	uint offset
 )
 {
+	const uint bs = 32;
 	uint x = get_global_id(0);
 	uint y = get_global_id(1);
 	uint bn = get_global_size(0);
 	uint n = get_global_size(1);
-	uint end = min(n, bn * 32);
-	end = min(32u, end - x * 32);
-	in += y * n + x * 32;
+	uint end = min(n, bn * bs);
+	end = min(bs, end - x * bs);
+	in += y * n + x * bs;
 	out += offset + y * bn + x;
 	int s = 0;
 	while (end--)

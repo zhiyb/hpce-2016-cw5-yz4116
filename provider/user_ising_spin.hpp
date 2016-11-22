@@ -2,6 +2,7 @@
 #define user_ising_spin_hpp
 
 #include <fstream>
+#include <thread>
 
 #include <tbb/parallel_for.h>
 #include "puzzler/puzzles/ising_spin.hpp"
@@ -197,25 +198,51 @@ public:
 			kernel_sum.setArg(3, bn * n);
 			kernel_acc.setArg(1, accBuffer);
 
-			std::vector<int32_t> current(n*n), next(n*n);
-			std::vector<uint32_t> s(n * n);
+			std::vector<int32_t> current(n*n * pInput->repeats), next(n*n);
+			tbb::parallel_for(0u, pInput->repeats, [&](uint32_t i) {
+				init(pInput->n, seeds[i], &current[i * n * n]);
+			});
+
+#define TH	3
+			struct {
+				std::vector<uint32_t> s;
+				std::thread thread;
+			} threads[TH];
+
+			for (unsigned i = 0; i != TH; i++) {
+				threads[i].thread = std::thread([&, i, n](uint32_t seed) {
+					threads[i].s.resize(n * n * pInput->maxTime);
+					for (unsigned t = 0; t != pInput->maxTime; t++) {
+						for (unsigned j = 0; j != n * n; j++) {
+							threads[i].s[t * n * n + j] = seed;
+							seed = lcg(seed);
+						}
+					}
+				}, seeds[i]);
+			}
+
+			//std::vector<uint32_t> s(n * n);
 			for (unsigned i = 0u; i < pInput->repeats; i++) {
 				//log->LogVerbose("  Repeat %u", i);
+				//log->LogInfo("  Repeat %u", i);
 
-				uint32_t seed = seeds[i];
-				init(pInput->n, seed, &current[0]);
+				//uint32_t seed = seeds[i];
+				//init(pInput->n, seed, &current[0]);
 				//size_t idx = i * n * n;
-				queue.enqueueWriteBuffer(currentBuffer, CL_TRUE, 0, cbBuffer, &current[0]);
+				queue.enqueueWriteBuffer(currentBuffer, CL_TRUE, 0, cbBuffer, &current[i * n * n]);
+
+				threads[i % TH].thread.join();
 
 				for(unsigned t=0; t<pInput->maxTime; t++){
           				// Dump the state of spins on high log levels
 					//dump(Log_Debug, pInput, &current[0], log);
 
-					for(unsigned j = 0u; j != n*n; j++) {
+					/*for(unsigned j = 0u; j != n*n; j++) {
 						s[j] = seed;
 						seed = lcg(seed);
-					}
-					queue.enqueueWriteBuffer(seedBuffer, CL_TRUE, 0, cbBuffer, &s[0]);
+					}*/
+					//queue.enqueueWriteBuffer(seedBuffer, CL_TRUE, 0, cbBuffer, &s[0]);
+					queue.enqueueWriteBuffer(seedBuffer, CL_TRUE, 0, cbBuffer, &threads[i % TH].s[t * n * n]);
 
 					kernel.setArg(1, currentBuffer);
 					kernel.setArg(2, nextBuffer);
@@ -234,6 +261,18 @@ public:
 					std::swap(currentBuffer, nextBuffer);
 				}
 
+				if (i + TH < pInput->repeats) {
+					threads[i % TH].thread = std::thread([&, i, n](uint32_t seed) {
+						//threads[i].s.resize(n * n * pInput->maxTime);
+						for (unsigned t = 0; t != pInput->maxTime; t++) {
+							for (unsigned j = 0; j != n * n; j++) {
+								threads[i % TH].s[t * n * n + j] = seed;
+								seed = lcg(seed);
+							}
+						}
+					}, seeds[i + TH]);
+				}
+
 				queue.enqueueNDRangeKernel(kernel_sum, cl::NullRange, cl::NDRange(pInput->maxTime), cl::NullRange);
 			}
 			queue.enqueueReadBuffer(sumsBuffer, CL_TRUE, 0, sizeof(float) * pInput->maxTime, &sums[0]);
@@ -245,6 +284,9 @@ public:
 				std::cerr << it->second << std::endl;
 			else
 				std::cerr << "Unknown " << e.err() << std::endl;
+			return;
+		} catch (const std::exception &e) {
+			std::cerr<<"Exception: "<<e.what()<<std::endl;
 			return;
 		}
 
