@@ -199,3 +199,35 @@ Loading puzzle from input takes ~8 seconds, but nothing I can do about it.
 The only part that can be optimised from the `provider` directory, is random walks algorithm, which takes another ~8 seconds in this case.
 
 The loop from `Execute()` steps a constant length of cells starting at a random location with randomised direction, and increment a `count` field in the corresponding output cell each time. Therefore, to parallelise the steps, the random seeds for each iteration were calculated and stored before actual iterations, and multiple independent `count` arrays were allocated for each parallel task. The `count` arrays then summarised together in the final output loop for histogram conversion, which was also parallelised.
+
+js11815
+=======
+
+IsingSpin
+---------
+
+The optimisation can be divided into two parts.
+The first optimisation point is the for loop, which repeats "pInput->repeats" times. It can be parallelised by tbb, however the seeds should be calculated before the parallelisation, so there is an another for loop for calculating seeds and filling them into one seeds vector. In the paralleled loop using the exact seed in the seeds vector. It will increase the speed of the program. In addition, the arguments of the functions in the private can be optimised. 
+
+The second point is 'step()' function. It can be paralleled by OpenCL. It will be replaced by a kernel. Also, a further optimisation has been applied with an accumulation kernel and a sum kernel. Also, we find that the seeds calculation is too slow and it will slow down the calculation speed. So we choose to use the std::thread in order to parallel the processes of generating the seeds. 
+
+LogicSim
+--------
+
+The function needs to be optimised is the "next()". The "main()" function is sequential, so it cannot be paralleled directly.
+
+In addition, the variable type "bool" cannot be used in tbb, so the vector should be changed into unsigned first as the code represent. After calculating, the result will be write back to the original "bool" vector.
+
+Verification
+============
+
+The whole verification process occur in the "Makefile.i5" and "Makefile.i7" which are Makefiles used in our own computers. There is a PHONY called test, which will call "diff" function to compare the output and the reference output. If there is no difference between the output and ref output, a .pass file will be generated.
+
+Furthermore, in OpenCL implementation, the results of the GPU output is not exactly correct due to its lower accuracy of calculation. To verify this, we plot out the output and the ref output into a file, and check the output results. If there is only small error, just ignore it. 
+
+Plan
+====
+
+The course work includes four problems, and each of us did two of them. yz4116 did more in this project. He designed the whole test system, and using Makefile to code it. In addition, he improved the OpenCL version of ising_spin in order to make it faster. 
+
+
