@@ -61,10 +61,15 @@ public:
 		const IsingSpinInput *pInput,
 		puzzler::IsingSpinOutput *pOutput
 	) const override {
+		unsigned n=pInput->n;
 
-		std::vector<float> sums(pInput->maxTime, 0.0);
-		std::vector<float> sumSquares(pInput->maxTime, 0.0);
+		if (n < 512)
+			goto cpu;
+
 		try{
+			std::vector<float> sums(pInput->maxTime, 0.0);
+			std::vector<float> sumSquares(pInput->maxTime, 0.0);
+
 			std::vector<cl::Platform> platforms;
 
 			cl::Platform::get(&platforms);
@@ -139,7 +144,6 @@ public:
 			}
 			program.build(devices);
 
-			unsigned n=pInput->n;
 			// size_t cbBuffer = 1 * pInput->maxTime * pInput->repeats;
 			size_t cbBuffer = sizeof(uint32_t) * n * n;
 			// size_t seBuffer = pInput->repeats;
@@ -200,7 +204,7 @@ public:
 
 			std::vector<int32_t> current(n*n * pInput->repeats), next(n*n);
 			tbb::parallel_for(0u, pInput->repeats, [&](uint32_t i) {
-				init(pInput->n, seeds[i], &current[i * n * n]);
+				init(n, seeds[i], &current[i * n * n]);
 			});
 
 #define TH	3
@@ -277,6 +281,27 @@ public:
 			}
 			queue.enqueueReadBuffer(sumsBuffer, CL_TRUE, 0, sizeof(float) * pInput->maxTime, &sums[0]);
 			queue.enqueueReadBuffer(sumSquaresBuffer, CL_TRUE, 0, sizeof(float) * pInput->maxTime, &sumSquares[0]);
+
+			log->LogInfo("Calculating final statistics");
+
+			pOutput->means.resize(pInput->maxTime);
+			pOutput->stddevs.resize(pInput->maxTime);
+			parallel_for(0u, pInput->maxTime, [&](unsigned i){
+				double sum = sums[i], sumSquare = sumSquares[i];
+				/*double sum = 0.f, sumSquare = 0.f;
+				double *pSums = &sums[i * pInput->repeats];
+				double *pSumSquares = &sumSquares[i * pInput->repeats];
+				for (unsigned i = 0; i != pInput->repeats; i++) {
+					sum += *pSums++;
+					sumSquare += *pSumSquares++;
+				}*/
+				pOutput->means[i] = sum / pInput->maxTime;
+				pOutput->stddevs[i] = sqrt( sumSquare/pInput->maxTime - pOutput->means[i]*pOutput->means[i] );
+				log->LogVerbose("  time %u : mean=%8.6f, stddev=%8.4f", i, pOutput->means[i], pOutput->stddevs[i]);
+			});
+
+			log->LogInfo("Finished");
+			return;
 		} catch (const cl::Error &e) {
 			std::cerr << "Exception from " << e.what() << ": ";
 			std::map<cl_int, std::string>::const_iterator it;
@@ -290,25 +315,61 @@ public:
 			return;
 		}
 
-		log->LogInfo("Calculating final statistics");
+cpu:
+		{
+			std::vector<double> sums(pInput->maxTime * pInput->repeats, 0.0);
+			std::vector<double> sumSquares(pInput->maxTime * pInput->repeats, 0.0);
 
-		pOutput->means.resize(pInput->maxTime);
-		pOutput->stddevs.resize(pInput->maxTime);
-		parallel_for(0u, pInput->maxTime, [&](unsigned i){
-			double sum = sums[i], sumSquare = sumSquares[i];
-			/*double sum = 0.f, sumSquare = 0.f;
-			double *pSums = &sums[i * pInput->repeats];
-			double *pSumSquares = &sumSquares[i * pInput->repeats];
-			for (unsigned i = 0; i != pInput->repeats; i++) {
-				sum += *pSums++;
-				sumSquare += *pSumSquares++;
-			}*/
-			pOutput->means[i] = sum / pInput->maxTime;
-			pOutput->stddevs[i] = sqrt( sumSquare/pInput->maxTime - pOutput->means[i]*pOutput->means[i] );
-			log->LogVerbose("  time %u : mean=%8.6f, stddev=%8.4f", i, pOutput->means[i], pOutput->stddevs[i]);
-		});
+			log->LogInfo("Starting steps.");
 
-		log->LogInfo("Finished");
+			std::mt19937 rng(pInput->seed); // Gives the same sequence on all platforms
+			std::vector<uint32_t> seeds(pInput->repeats);
+			for (uint32_t &seed: seeds)
+				seed = rng();
+			tbb::parallel_for(0u, pInput->repeats, [=, &seeds, &log, &sums, &sumSquares](unsigned i){
+				std::vector<int> current(n*n), next(n*n);
+				uint32_t seed = seeds[i];
+
+				//log->LogVerbose("  Repeat %u", i);
+
+				//size_t idx = i * n * n;
+				init(n, seed, &current[0]);
+
+				for(unsigned t=0; t<pInput->maxTime; t++){
+					//log->LogDebug("    Step %u", t);
+
+					// Dump the state of spins on high log levels
+					//dump(Log_Debug, pInput, &current[0], log);
+
+					step(pInput, seed, &current[0], &next[0]);
+					std::swap(current, next);
+
+					// Track the statistics
+					double countPositive = std::accumulate(&current[0], &current[0] + n * n, 0);
+					sums[i + t * pInput->repeats] = countPositive;
+					sumSquares[i + t * pInput->repeats] = countPositive*countPositive;
+				}
+			});
+
+			log->LogInfo("Calculating final statistics");
+
+			pOutput->means.resize(pInput->maxTime);
+			pOutput->stddevs.resize(pInput->maxTime);
+			parallel_for(0u, pInput->maxTime, [&](unsigned i){
+				double sum = 0.f, sumSquare = 0.f;
+				double *pSums = &sums[i * pInput->repeats];
+				double *pSumSquares = &sumSquares[i * pInput->repeats];
+				for (unsigned i = 0; i != pInput->repeats; i++) {
+					sum += *pSums++;
+					sumSquare += *pSumSquares++;
+				}
+				pOutput->means[i] = sum / pInput->maxTime;
+				pOutput->stddevs[i] = sqrt( sumSquare/pInput->maxTime - pOutput->means[i]*pOutput->means[i] );
+				log->LogVerbose("  time %u : mean=%8.6f, stddev=%8.4f", i, pOutput->means[i], pOutput->stddevs[i]);
+			});
+
+			log->LogInfo("Finished");
+		}
 	}
 private:
 	std::map<cl_int, std::string> errmap;
@@ -329,6 +390,35 @@ private:
 				seed = lcg(seed);
 			}
 		}
+	}
+
+	void step(
+		const IsingSpinInput *pInput,
+		uint32_t &seed,
+		const int *in,
+		int *out
+	 ) const {
+		unsigned n=pInput->n;
+		uint32_t s = seed;
+
+		for(unsigned x=0; x<n; x++){
+			for(unsigned y=0; y<n; y++){
+				int W = x==0 ?    in[y*n+n-1]   : in[y*n+x-1];
+				int E = x==n-1 ?  in[y*n+0]     : in[y*n+x+1];
+				int N = y==0 ?    in[(n-1)*n+x] : in[(y-1)*n+x];
+				int S = y==n-1 ?  in[0*n+x]     : in[(y+1)*n+x];
+				int nhood=W+E+N+S;
+
+				int C = in[y*n+x];
+
+				unsigned index=(nhood+4)/2 + 5*(C+1)/2;
+				float prob=pInput->probs[index];
+
+				out[y*n+x] = s < prob ? -C : C;
+				s = lcg(s);
+			}
+		}
+		seed = s;
 	}
 
 	void dump(

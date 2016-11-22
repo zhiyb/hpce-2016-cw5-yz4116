@@ -59,10 +59,10 @@ __kernel void sum(
 	sums += i;
 	sumSquares += i;
 
-	float s = 0;
+	int s = 0;
 	while (bs--)
 		s += *in++;
 
 	*sums += (float)s;
-	*sumSquares += (float)(s * s);
+	*sumSquares += ((float)s * (float)s);
 }
