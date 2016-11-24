@@ -28,7 +28,7 @@ public:
 	) const override {
 		//std::vector<unsigned> dest(pInput->width*pInput->height);
 
-		if (std::max(pInput->width, pInput->height) < 600)
+		if (std::max(pInput->width, pInput->height) < 1000)
 			goto cpu;
 
 		try {
@@ -189,7 +189,7 @@ private:
 	{
 		float dx=3.0f/width, dy=3.0f/height;
 
-		tbb::parallel_for(0u, height * width, [&](unsigned i){
+		tbb::parallel_for(0u, height * width, [=](unsigned i){
 			unsigned y = i / width;
 			unsigned x = i % width;
 			complex_t z(-1.5f+x*dx, -1.5f+y*dy);
@@ -208,8 +208,8 @@ private:
 				++iter;
 			}
 			//pOutput->pixels[i] = (dest[i]==pInput->maxIter) ? 0 : (1+(dest[i]%256));
-			//pDest[i] = (iter == maxIter) ? 0 : (1 + iter % 256);
-			pDest[i] = (iter + 1) % (maxIter + 1);
+			pDest[i] = (iter == maxIter) ? 0 : (1 + iter % 256);
+			//pDest[i] = (iter + 1) % (maxIter + 1);
 			//pDest[y*width+x] = iter;
 		});
 	}
