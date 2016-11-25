@@ -174,10 +174,11 @@ yz4116
 Julia
 -----
 
-Julia algorithm renders each pixels independently, without any dependencies, therefore it can be simply parallelised.
+Julia algorithm renders each pixels independently, therefore it can be simply parallelised.
 
 The 2 loops in reference implementation (one from frame renderer, another one from `Execute()` calculates actual pixel output) were merged together, gives a greater speed up.
 
+By comparing the execution time of pure CPU TBB implementation and pure GPU OpenCL implementation, I decided to switch to OpenCL version only when the puzzle scale becomes larger than 1000, when both implementations take approximately the same time.
 
 RandomWalk
 ----------
@@ -194,11 +195,15 @@ From reference execution time: (with `scale = 10000`)
 [execute_puzzle], 1479257418.63, 2, Finished reference
 ```
 
-Loading puzzle from input takes ~8 seconds, but nothing I can do about it.
+Loading puzzle from input alone takes ~8 seconds, but nothing I can do about it.
 
 The only part that can be optimised from the `provider` directory, is random walks algorithm, which takes another ~8 seconds in this case.
 
-The loop from `Execute()` steps a constant length of cells starting at a random location with randomised direction, and increment a `count` field in the corresponding output cell each time. Therefore, to parallelise the steps, the random seeds for each iteration were calculated and stored before actual iterations, and multiple independent `count` arrays were allocated for each parallel task. The `count` arrays then summarised together in the final output loop for histogram conversion, which was also parallelised.
+The loop from `Execute()` steps a constant length of cells starting at a random location with randomised direction, and increment a `count` field in the corresponding output cell each time. Therefore, to parallelise the steps, the random seeds for each iteration need to be calculated and stored before the iterations can take place, and multiple independent `count` arrays need to be allocated for each parallel task, then summarised together in the final output loop for histogram conversion, which was also parallelised.
+
+For the OpenCL implementation, both the iteration and summarise steps were taken place inside GPU by dedicated kernels. Therefore, time can be saved for not transfer less informations from/to GPU buffers. Since this puzzle involves no floating point arithmetic, the results from OpenCL implementation should be exactly the same as reference results. The given header files and NVIDIA driver only support OpenCL up to version 1.1, which means `clEnqueueFillBuffer` function will not be available, some buffers need to be initialised by kernel codes first, may cause a reduction in performance.
+
+By comparing the execution time of pure CPU TBB implementation and pure GPU OpenCL implementation, I decided to switch to OpenCL version only when the puzzle scale becomes larger than 4000, when both implementations take approximately the same time.
 
 js11815
 =======
@@ -207,9 +212,12 @@ IsingSpin
 ---------
 
 The optimisation can be divided into two parts.
-The first optimisation point is the for loop, which repeats "pInput->repeats" times. It can be parallelised by tbb, however the seeds should be calculated before the parallelisation, so there is an another for loop for calculating seeds and filling them into one seeds vector. In the paralleled loop using the exact seed in the seeds vector. It will increase the speed of the program. In addition, the arguments of the functions in the private can be optimised. 
 
-The second point is 'step()' function. It can be paralleled by OpenCL. It will be replaced by a kernel. Also, a further optimisation has been applied with an accumulation kernel and a sum kernel. Also, we find that the seeds calculation is too slow and it will slow down the calculation speed. So we choose to use the std::thread in order to parallel the processes of generating the seeds. 
+The first possible optimisation is buffer initialisation inside the `for` loop that repeats `pInput->repeats` times. It can be parallelised by using TBB. However, the seeds need to be calculated sequentially before the parallelisation, so there is another `for` loop calculating and saving each of them into a vector buffer. In the paralleled loop, the exact seed to be used is then found by indexing into the vector buffer.
+
+The second possible optimisation is the `step()` function. It can be easily paralleled by TBB by keeping the function inside the `for` loop. It can also be paralleled by OpenCL, by replacing with a few kernels. Also, a further optimisation has been applied with an accumulation kernel and a sum kernel, to reduce buffer transfer and put more calculations into GPU. Also, we found that pre-calculate all seeds will require a large amount of memory space, and can be slow. Therefore, we used some `std::thread` to parallel the processes of generating the seeds for next few iterations, while OpenCL kernels are busily working. We chose `std::thread` instead of TBB because it can be managed easier, and it is possible to block-waiting for a thread to finish.
+
+By comparing the execution time of pure CPU TBB implementation and pure GPU OpenCL implementation, we decided to switch to OpenCL version only when the puzzle scale becomes larger than 512, when both implementations take approximately the same time. Unfortunately this never happened in the automatic benchmarking process.
 
 LogicSim
 --------
@@ -223,13 +231,11 @@ Furthermore, we have tried the task_group in the calcSrc(), but it will decrease
 Verification
 ============
 
-The whole verification process occur in the "Makefile.i5" and "Makefile.i7" which are Makefiles used in our own computers. There is a PHONY called test, which will call "diff" function to compare the output and the reference output. If there is no difference between the output and ref output, a .pass file will be generated.
+The verification commands were written as rules in the `Makefile.i5` and `Makefile.i7` files, which are Makefiles used in our specific environments. There is a PHONY rule called test, which will generate then use the `diff` program to compare the outputs from the implementation and the reference. If there is absolutely no difference between them, a corresponding `.pass` file will be updated and no error will be generated in the process.
 
-Furthermore, in OpenCL implementation, the results of the GPU output is not exactly correct due to its lower accuracy of calculation. To verify this, we plot out the output and the ref output into a file, and check the output results. If there is only small error, just ignore it. 
+However, for OpenCL implementations, some results are not exactly the same as CPU implementations counterparts, therefore may not pass the `diff` test. This is due to floating point arithmetic in GPU has lower accuracy compare to CPU's. The only exception is `random_walk`, which has no floating point arithmetic at all, thus will pass the `diff` test. To verify lower accuracy results, we turn on verbose debug mode, save and plot the results and their reference outputs, compare the differences between them. If the differences are not notably big, e.g. less than 0.01%, we assume this is due to GPU accuracy rather than coding error.
 
-Plan
+Planning
 ====
 
-The course work includes four problems, and each of us did two of them. yz4116 did more in this project. He designed the whole test system, and using Makefile to code it. In addition, he improved the OpenCL version of ising_spin in order to make it faster. 
-
-
+This coursework includes four problems, each of us did two of them, as stated above. yz4116 did more in this project. He designed the whole test system, and using Makefile to code it. In addition, he improved the implementation of `ising_spin` for a better speed performance.

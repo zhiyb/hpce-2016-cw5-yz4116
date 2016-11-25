@@ -73,24 +73,19 @@ public:
 			cl::Platform::get(&platforms);
 			if(platforms.size()==0)
 				throw std::runtime_error("No OpenCL platforms found.");
-			std::cerr<<"Found "<<platforms.size()<<" platforms\n";
-			for(unsigned i=0;i<platforms.size();i++){
-				std::string vendor=platforms[i].getInfo<CL_PLATFORM_VENDOR>();
-				std::cerr<<"  Platform "<<i<<" : "<<vendor<<"\n";
-			}
 			int selectedPlatform=0;
 			if(getenv("HPCE_SELECT_PLATFORM")){
 				selectedPlatform=atoi(getenv("HPCE_SELECT_PLATFORM"));
 			}
 			cl::Platform platform(platforms.at(selectedPlatform));
 			log->Log(Log_Debug, [&](std::ostream &dst) {
-					dst << "Found " << platforms.size() << " platforms\n";
-					for (unsigned i = 0; i < platforms.size(); i++) {
+				dst << "Found " << platforms.size() << " platforms\n";
+				for (unsigned i = 0; i < platforms.size(); i++) {
 					std::string vendor = platforms[i].getInfo<CL_PLATFORM_NAME>();
 					dst << "  Platform " << i << " : " << vendor << "\n";
-					}
-					dst << "Choosing platform " << selectedPlatform << ": " << platform.getInfo<CL_PLATFORM_NAME>() << "\n";
-					});
+				}
+				dst << "Choosing platform " << selectedPlatform << ": " << platform.getInfo<CL_PLATFORM_NAME>() << "\n";
+			});
 			// std::cerr<<"Choosing platform "<<selectedPlatform<<"\n";
 			// cl::Platform platform=platforms.at(selectedPlatform);
 
@@ -100,11 +95,6 @@ public:
 				throw std::runtime_error("No opencl devices found.\n");
 			}
 
-			std::cerr<<"Found "<<devices.size()<<" devices\n";
-			for(unsigned i=0;i<devices.size();i++){
-				std::string name=devices[i].getInfo<CL_DEVICE_NAME>();
-				std::cerr<<"  Device "<<i<<" : "<<name<<"\n";
-			}
 			int selectedDevice=0;
 			if(getenv("HPCE_SELECT_DEVICE")){
 				selectedDevice=atoi(getenv("HPCE_SELECT_DEVICE"));
@@ -112,13 +102,13 @@ public:
 			// std::cerr<<"Choosing device "<<selectedDevice<<"\n";
 			cl::Device device=devices.at(selectedDevice);
 			log->Log(Log_Debug, [&](std::ostream &dst) {
-					dst << "Found " << devices.size() << " devices\n";
-					for (unsigned i = 0; i < devices.size(); i++) {
+				dst << "Found " << devices.size() << " devices\n";
+				for (unsigned i = 0; i < devices.size(); i++) {
 					std::string name = devices[i].getInfo<CL_DEVICE_NAME>();
 					dst << "  Device " << i << " : " << name << "\n";
-					}
-					dst << "Choosing device " << selectedDevice << ": " << device.getInfo<CL_DEVICE_NAME>() << "\n";
-					});
+				}
+				dst << "Choosing device " << selectedDevice << ": " << device.getInfo<CL_DEVICE_NAME>() << "\n";
+			});
 
 			log->LogInfo("Starting");
 
